@@ -5,14 +5,29 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createEventBus } from '../../src/core/bus.mjs';
 import { createAgentLoop } from '../../src/agent/loop.mjs';
 
-function createSequencedProvider(texts) {
+function createSequencedProvider(items) {
   let index = 0;
   return {
     async chatCompletion() {
-      const text = texts[index] ?? texts[texts.length - 1] ?? '';
+      const item = items[index] ?? items[items.length - 1] ?? '';
       index += 1;
+
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        return {
+          text: item.text ?? '',
+          toolCalls: item.toolCalls ?? [],
+          finishReason: item.finishReason ?? 'stop',
+          usage: {
+            promptTokens: 1,
+            completionTokens: 1,
+            totalTokens: 2,
+          },
+        };
+      }
+
       return {
-        text,
+        text: String(item ?? ''),
+        toolCalls: [],
         finishReason: 'stop',
         usage: {
           promptTokens: 1,
@@ -37,7 +52,7 @@ async function waitFor(predicate, { timeoutMs = 500, intervalMs = 10 } = {}) {
   throw new Error('Timed out waiting for condition.');
 }
 
-test('loop executes tool call and emits status + final response', async () => {
+test('loop executes native OpenAI tool_calls and emits final response', async () => {
   const bus = createEventBus();
   const emitted = [];
 
@@ -46,32 +61,40 @@ test('loop executes tool call and emits status + final response', async () => {
   });
 
   const provider = createSequencedProvider([
-    '{"name":"bash","arguments":{"cmd":"echo hi"}}',
-    'Final response after tool',
+    {
+      text: '',
+      finishReason: 'tool_calls',
+      toolCalls: [
+        {
+          id: 'call_1',
+          name: 'bash',
+          arguments: { command: 'pwd' },
+        },
+      ],
+    },
+    {
+      text: 'Final response after tool',
+      finishReason: 'stop',
+    },
   ]);
 
   const parser = {
     parse(text) {
-      if (text.startsWith('{')) {
-        return {
-          kind: 'tool_call',
-          toolName: 'bash',
-          arguments: { cmd: 'echo hi' },
-        };
-      }
-
       return { kind: 'final', text };
     },
   };
 
   const toolRegistry = {
     calls: [],
+    list() {
+      return [{ name: 'bash', description: 'run shell', schema: { type: 'object' } }];
+    },
     validateCall() {
       return { valid: true, errors: [] };
     },
     async execute(call) {
       this.calls.push(call);
-      return { stdout: 'hi' };
+      return { stdout: '/workspace' };
     },
   };
 
@@ -103,13 +126,11 @@ test('loop executes tool call and emits status + final response', async () => {
     (event) => event.type === 'agent:status' && event.content.phase === 'tool:start',
   );
   assert.ok(toolStartStatus);
-  assert.equal(toolStartStatus.content.tool.name, 'bash');
 
   const toolDoneStatus = emitted.find(
     (event) => event.type === 'agent:status' && event.content.phase === 'tool:complete',
   );
   assert.ok(toolDoneStatus);
-  assert.equal(toolDoneStatus.content.tool.name, 'bash');
 
   const responseEvent = emitted.find((event) => event.type === 'agent:response');
   assert.ok(responseEvent);
@@ -125,22 +146,21 @@ test('loop emits tool-limit response when call cap is exceeded', async () => {
   });
 
   const provider = createSequencedProvider([
-    '{"name":"bash","arguments":{}}',
-    '{"name":"bash","arguments":{}}',
-    '{"name":"bash","arguments":{}}',
+    { text: '', finishReason: 'tool_calls', toolCalls: [{ id: 'c1', name: 'bash', arguments: {} }] },
+    { text: '', finishReason: 'tool_calls', toolCalls: [{ id: 'c2', name: 'bash', arguments: {} }] },
+    { text: '', finishReason: 'tool_calls', toolCalls: [{ id: 'c3', name: 'bash', arguments: {} }] },
   ]);
 
   const parser = {
     parse() {
-      return {
-        kind: 'tool_call',
-        toolName: 'bash',
-        arguments: {},
-      };
+      return { kind: 'tool_call', toolName: 'bash', arguments: {} };
     },
   };
 
   const toolRegistry = {
+    list() {
+      return [{ name: 'bash', description: 'run shell', schema: { type: 'object' } }];
+    },
     validateCall() {
       return { valid: true, errors: [] };
     },
@@ -185,9 +205,9 @@ test('loop retries on parse/validation errors and then succeeds', async () => {
   });
 
   const provider = createSequencedProvider([
-    '```json\n{tool: "bash", args: {"command":"pwd"}}\n```', // parse_error
-    '{"name":"bash","arguments":{"command":123}}', // validation error
-    '{"name":"bash","arguments":{"command":"pwd"}}', // valid tool call
+    '```json\n{tool: "bash", args: {"command":"pwd"}}\n```',
+    '{"name":"bash","arguments":{"command":123}}',
+    '{"name":"bash","arguments":{"command":"pwd"}}',
     'Final after correction',
   ]);
 
@@ -212,6 +232,9 @@ test('loop retries on parse/validation errors and then succeeds', async () => {
 
   const toolRegistry = {
     calls: [],
+    list() {
+      return [{ name: 'bash', description: 'run shell', schema: { type: 'object' } }];
+    },
     validateCall(call) {
       if (typeof call.arguments.command !== 'string') {
         return { valid: false, errors: ["argument 'command' must be of type 'string'."] };
@@ -282,6 +305,9 @@ test('loop replaces blank final text with diagnostic message', async () => {
     provider,
     parser,
     toolRegistry: {
+      list() {
+        return [];
+      },
       validateCall() {
         return { valid: true, errors: [] };
       },

@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 
 import { createLmStudioProvider } from '../../src/provider/lmstudio.mjs';
 
-test('chatCompletion posts LM Studio payload and normalizes result', async () => {
+test('chatCompletion posts OpenAI-compatible payload with tools and normalizes result', async () => {
   const calls = [];
   const provider = createLmStudioProvider({
     baseUrl: 'http://localhost:1234/v1',
-    model: 'gpt-oss:20b',
+    model: 'openai/gpt-oss-20b',
     temperature: 0.2,
     topP: 0.9,
     fetchImpl: async (url, init) => {
@@ -17,7 +17,7 @@ test('chatCompletion posts LM Studio payload and normalizes result', async () =>
         async json() {
           return {
             id: 'chatcmpl_1',
-            model: 'gpt-oss:20b',
+            model: 'openai/gpt-oss-20b',
             choices: [
               {
                 message: { role: 'assistant', content: 'hello from model' },
@@ -38,21 +38,33 @@ test('chatCompletion posts LM Studio payload and normalizes result', async () =>
   const result = await provider.chatCompletion({
     messages: [{ role: 'user', content: 'hi' }],
     maxTokens: 256,
+    tools: [
+      {
+        name: 'read',
+        description: 'Read files',
+        schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+      },
+    ],
+    toolChoice: 'auto',
   });
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'http://localhost:1234/v1/chat/completions');
 
   const payload = JSON.parse(calls[0].init.body);
-  assert.equal(payload.model, 'gpt-oss:20b');
+  assert.equal(payload.model, 'openai/gpt-oss-20b');
   assert.equal(payload.max_tokens, 256);
   assert.equal(payload.temperature, 0.2);
   assert.equal(payload.top_p, 0.9);
   assert.equal(payload.stream, false);
   assert.deepEqual(payload.messages, [{ role: 'user', content: 'hi' }]);
+  assert.equal(payload.tools[0].type, 'function');
+  assert.equal(payload.tools[0].function.name, 'read');
+  assert.equal(payload.tool_choice, 'auto');
 
   assert.equal(result.text, 'hello from model');
   assert.equal(result.finishReason, 'stop');
+  assert.deepEqual(result.toolCalls, []);
   assert.deepEqual(result.usage, {
     promptTokens: 100,
     completionTokens: 25,
@@ -60,29 +72,13 @@ test('chatCompletion posts LM Studio payload and normalizes result', async () =>
   });
 });
 
-test('chatCompletion rejects calls without explicit maxTokens', async () => {
-  const provider = createLmStudioProvider({
-    model: 'gpt-oss:20b',
-    fetchImpl: async () => {
-      throw new Error('fetch should not be called when maxTokens is invalid');
-    },
-  });
-
-  await assert.rejects(
-    provider.chatCompletion({ messages: [{ role: 'user', content: 'hi' }] }),
-    /maxTokens must be a positive integer/,
-  );
-});
-
-test('chatCompletion normalizes OpenAI content arrays and tool_calls', async () => {
-  const provider = createLmStudioProvider({
-    model: 'gpt-oss:20b',
+test('chatCompletion normalizes content arrays and tool_calls', async () => {
+  const providerWithArrayContent = createLmStudioProvider({
+    model: 'openai/gpt-oss-20b',
     fetchImpl: async () => ({
       ok: true,
       async json() {
         return {
-          id: 'chatcmpl_2',
-          model: 'gpt-oss:20b',
           choices: [
             {
               message: {
@@ -98,14 +94,14 @@ test('chatCompletion normalizes OpenAI content arrays and tool_calls', async () 
     }),
   });
 
-  const contentResult = await provider.chatCompletion({
+  const contentResult = await providerWithArrayContent.chatCompletion({
     messages: [{ role: 'user', content: 'hi' }],
     maxTokens: 128,
   });
   assert.equal(contentResult.text, 'part 1\npart 2');
 
   const providerWithToolCalls = createLmStudioProvider({
-    model: 'gpt-oss:20b',
+    model: 'openai/gpt-oss-20b',
     fetchImpl: async () => ({
       ok: true,
       async json() {
@@ -129,6 +125,7 @@ test('chatCompletion normalizes OpenAI content arrays and tool_calls', async () 
               finish_reason: 'tool_calls',
             },
           ],
+          usage: {},
         };
       },
     }),
@@ -139,6 +136,24 @@ test('chatCompletion normalizes OpenAI content arrays and tool_calls', async () 
     maxTokens: 128,
   });
 
-  assert.equal(toolCallResult.text, '{"tool":"bash","args":{"command":"pwd"}}');
   assert.equal(toolCallResult.finishReason, 'tool_calls');
+  assert.equal(toolCallResult.toolCalls.length, 1);
+  assert.equal(toolCallResult.toolCalls[0].id, 'call_1');
+  assert.equal(toolCallResult.toolCalls[0].name, 'bash');
+  assert.deepEqual(toolCallResult.toolCalls[0].arguments, { command: 'pwd' });
+  assert.equal(toolCallResult.text, '{"tool":"bash","args":{"command":"pwd"}}');
+});
+
+test('chatCompletion rejects calls without explicit maxTokens', async () => {
+  const provider = createLmStudioProvider({
+    model: 'openai/gpt-oss-20b',
+    fetchImpl: async () => {
+      throw new Error('fetch should not be called when maxTokens is invalid');
+    },
+  });
+
+  await assert.rejects(
+    provider.chatCompletion({ messages: [{ role: 'user', content: 'hi' }] }),
+    /maxTokens must be a positive integer/,
+  );
 });

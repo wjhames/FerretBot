@@ -36,6 +36,15 @@ function buildCorrectionPrompt(reason) {
   ].join('\n');
 }
 
+function getToolDefinitions(toolRegistry) {
+  if (!toolRegistry || typeof toolRegistry.list !== 'function') {
+    return [];
+  }
+
+  const listed = toolRegistry.list();
+  return Array.isArray(listed) ? listed : [];
+}
+
 export class AgentLoop {
   #bus;
   #provider;
@@ -166,7 +175,40 @@ export class AgentLoop {
       const completion = await this.#provider.chatCompletion({
         messages,
         maxTokens: maxOutputTokens,
+        tools: getToolDefinitions(this.#toolRegistry),
+        toolChoice: 'auto',
       });
+
+      const nativeToolCall = Array.isArray(completion.toolCalls) && completion.toolCalls.length > 0
+        ? completion.toolCalls[0]
+        : null;
+
+      if (nativeToolCall) {
+        const parsedToolCall = {
+          toolName: nativeToolCall.name,
+          arguments: nativeToolCall.arguments ?? {},
+          toolCallId: nativeToolCall.id,
+          rawAssistantText: completion.text,
+        };
+
+        const handled = await this.#handleToolCall({
+          event,
+          messages,
+          completion,
+          parsedToolCall,
+          toolCalls,
+          correctionRetries,
+        });
+
+        toolCalls = handled.toolCalls;
+        correctionRetries = handled.correctionRetries;
+
+        if (handled.done) {
+          return;
+        }
+
+        continue;
+      }
 
       const parsed = this.#parser.parse(completion.text);
 
@@ -219,98 +261,134 @@ export class AgentLoop {
         return;
       }
 
-      if (!this.#toolRegistry || typeof this.#toolRegistry.execute !== 'function') {
-        throw new Error('Tool call requested but no toolRegistry.execute is configured.');
-      }
+      const handled = await this.#handleToolCall({
+        event,
+        messages,
+        completion,
+        parsedToolCall: {
+          toolName: parsed.toolName,
+          arguments: parsed.arguments,
+          toolCallId: null,
+          rawAssistantText: completion.text,
+        },
+        toolCalls,
+        correctionRetries,
+      });
 
-      const validation =
-        typeof this.#toolRegistry.validateCall === 'function'
-          ? this.#toolRegistry.validateCall({ name: parsed.toolName, arguments: parsed.arguments })
-          : { valid: true, errors: [] };
+      toolCalls = handled.toolCalls;
+      correctionRetries = handled.correctionRetries;
 
-      if (!validation.valid) {
-        const reason = validation.errors?.join(' ') || 'Invalid tool call.';
-        const shouldRetry = correctionRetries < this.#retryLimit;
-
-        if (!shouldRetry) {
-          this.#emitCorrectionFailure(event, 'Unable to produce a valid tool call after retries.');
-          return;
-        }
-
-        correctionRetries += 1;
-        messages.push({ role: 'assistant', content: completion.text });
-        messages.push({ role: 'system', content: buildCorrectionPrompt(reason) });
-        this.#queueEmit({
-          type: 'agent:status',
-          channel: event.channel,
-          sessionId: event.sessionId,
-          content: {
-            phase: 'validate:retry',
-            text: `Retrying invalid tool call (${correctionRetries}/${this.#retryLimit}).`,
-            detail: reason,
-          },
-        });
-        continue;
-      }
-
-      correctionRetries = 0;
-      toolCalls += 1;
-      if (toolCalls > this.#maxToolCallsPerStep) {
-        this.#queueEmit({
-          type: 'agent:response',
-          channel: event.channel,
-          sessionId: event.sessionId,
-          content: {
-            text: 'Tool call limit reached before final response.',
-            finishReason: 'tool_limit',
-            usage: completion.usage,
-          },
-        });
+      if (handled.done) {
         return;
       }
-
-      this.#queueEmit({
-        type: 'agent:status',
-        channel: event.channel,
-        sessionId: event.sessionId,
-        content: {
-          phase: 'tool:start',
-          text: `Running tool: ${parsed.toolName}`,
-          tool: {
-            name: parsed.toolName,
-            arguments: parsed.arguments,
-          },
-        },
-      });
-
-      const toolResult = await this.#toolRegistry.execute({
-        name: parsed.toolName,
-        arguments: parsed.arguments,
-        event,
-      });
-
-      this.#queueEmit({
-        type: 'agent:status',
-        channel: event.channel,
-        sessionId: event.sessionId,
-        content: {
-          phase: 'tool:complete',
-          text: `Tool complete: ${parsed.toolName}`,
-          tool: {
-            name: parsed.toolName,
-          },
-        },
-      });
-
-      messages.push({ role: 'assistant', content: completion.text });
-      messages.push({
-        role: 'tool',
-        content: JSON.stringify({
-          name: parsed.toolName,
-          result: toolResult,
-        }),
-      });
     }
+  }
+
+  async #handleToolCall({ event, messages, completion, parsedToolCall, toolCalls, correctionRetries }) {
+    if (!this.#toolRegistry || typeof this.#toolRegistry.execute !== 'function') {
+      throw new Error('Tool call requested but no toolRegistry.execute is configured.');
+    }
+
+    const validation =
+      typeof this.#toolRegistry.validateCall === 'function'
+        ? this.#toolRegistry.validateCall({ name: parsedToolCall.toolName, arguments: parsedToolCall.arguments })
+        : { valid: true, errors: [] };
+
+    if (!validation.valid) {
+      const reason = validation.errors?.join(' ') || 'Invalid tool call.';
+      const shouldRetry = correctionRetries < this.#retryLimit;
+
+      if (!shouldRetry) {
+        this.#emitCorrectionFailure(event, 'Unable to produce a valid tool call after retries.');
+        return { done: true, toolCalls, correctionRetries };
+      }
+
+      const nextRetries = correctionRetries + 1;
+      messages.push({ role: 'assistant', content: parsedToolCall.rawAssistantText ?? completion.text });
+      messages.push({ role: 'system', content: buildCorrectionPrompt(reason) });
+      this.#queueEmit({
+        type: 'agent:status',
+        channel: event.channel,
+        sessionId: event.sessionId,
+        content: {
+          phase: 'validate:retry',
+          text: `Retrying invalid tool call (${nextRetries}/${this.#retryLimit}).`,
+          detail: reason,
+        },
+      });
+
+      return {
+        done: false,
+        toolCalls,
+        correctionRetries: nextRetries,
+      };
+    }
+
+    let nextToolCalls = toolCalls + 1;
+    if (nextToolCalls > this.#maxToolCallsPerStep) {
+      this.#queueEmit({
+        type: 'agent:response',
+        channel: event.channel,
+        sessionId: event.sessionId,
+        content: {
+          text: 'Tool call limit reached before final response.',
+          finishReason: 'tool_limit',
+          usage: completion.usage,
+        },
+      });
+      return { done: true, toolCalls: nextToolCalls, correctionRetries: 0 };
+    }
+
+    this.#queueEmit({
+      type: 'agent:status',
+      channel: event.channel,
+      sessionId: event.sessionId,
+      content: {
+        phase: 'tool:start',
+        text: `Running tool: ${parsedToolCall.toolName}`,
+        tool: {
+          name: parsedToolCall.toolName,
+          arguments: parsedToolCall.arguments,
+        },
+      },
+    });
+
+    const toolResult = await this.#toolRegistry.execute({
+      name: parsedToolCall.toolName,
+      arguments: parsedToolCall.arguments,
+      event,
+    });
+
+    this.#queueEmit({
+      type: 'agent:status',
+      channel: event.channel,
+      sessionId: event.sessionId,
+      content: {
+        phase: 'tool:complete',
+        text: `Tool complete: ${parsedToolCall.toolName}`,
+        tool: {
+          name: parsedToolCall.toolName,
+        },
+      },
+    });
+
+    messages.push({
+      role: 'assistant',
+      content: typeof completion.text === 'string' ? completion.text : '',
+    });
+
+    messages.push({
+      role: 'tool',
+      content: JSON.stringify(toolResult),
+      tool_call_id: parsedToolCall.toolCallId,
+      name: parsedToolCall.toolName,
+    });
+
+    return {
+      done: false,
+      toolCalls: nextToolCalls,
+      correctionRetries: 0,
+    };
   }
 
   #emitCorrectionFailure(event, text) {
