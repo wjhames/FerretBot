@@ -1,5 +1,5 @@
 const DEFAULT_BASE_URL = 'http://192.168.1.7:1234/v1';
-const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_TIMEOUT_MS = 300_000;
 
 function safeJsonParse(value) {
   try {
@@ -51,13 +51,21 @@ function normalizeToolCalls(firstChoice) {
         }
 
         const rawArguments = call?.function?.arguments;
-        const parsedArgs = typeof rawArguments === 'string' ? safeJsonParse(rawArguments) : rawArguments;
+        const parsedArgs =
+          typeof rawArguments === 'string'
+            ? safeJsonParse(rawArguments)
+            : rawArguments;
 
         return {
           id: typeof call?.id === 'string' ? call.id : null,
           type: call?.type ?? 'function',
           name,
-          arguments: parsedArgs && typeof parsedArgs === 'object' && !Array.isArray(parsedArgs) ? parsedArgs : {},
+          arguments:
+            parsedArgs &&
+            typeof parsedArgs === 'object' &&
+            !Array.isArray(parsedArgs)
+              ? parsedArgs
+              : {},
         };
       })
       .filter(Boolean);
@@ -70,7 +78,12 @@ function normalizeToolCalls(firstChoice) {
         id: null,
         type: 'function',
         name: message.function_call.name,
-        arguments: parsedArgs && typeof parsedArgs === 'object' && !Array.isArray(parsedArgs) ? parsedArgs : {},
+        arguments:
+          parsedArgs &&
+          typeof parsedArgs === 'object' &&
+          !Array.isArray(parsedArgs)
+            ? parsedArgs
+            : {},
       },
     ];
   }
@@ -120,8 +133,10 @@ function normalizeToolDefinitions(tools) {
         return null;
       }
 
-      const description = tool?.function?.description ?? tool?.description ?? '';
-      const parameters = tool?.function?.parameters ?? tool?.schema ?? { type: 'object', properties: {} };
+      const description =
+        tool?.function?.description ?? tool?.description ?? '';
+      const parameters = tool?.function?.parameters ??
+        tool?.schema ?? { type: 'object', properties: {} };
 
       return {
         type: 'function',
@@ -245,7 +260,9 @@ export class LmStudioProvider {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(`LM Studio request failed (${response.status}): ${errorBody}`);
+      throw new Error(
+        `LM Studio request failed (${response.status}): ${errorBody}`,
+      );
     }
 
     return response.json();
@@ -265,8 +282,16 @@ export class LmStudioProvider {
         throw new TypeError('Each message.role must be a non-empty string.');
       }
 
-      if (!(typeof message.content === 'string' || Array.isArray(message.content) || message.content == null)) {
-        throw new TypeError('Each message.content must be a string, array, or null.');
+      if (
+        !(
+          typeof message.content === 'string' ||
+          Array.isArray(message.content) ||
+          message.content == null
+        )
+      ) {
+        throw new TypeError(
+          'Each message.content must be a string, array, or null.',
+        );
       }
     }
   }
