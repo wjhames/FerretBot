@@ -205,7 +205,7 @@ test('loop retries on parse/validation errors and then succeeds', async () => {
   });
 
   const provider = createSequencedProvider([
-    '```json\n{tool: "bash", args: {"command":"pwd"}}\n```',
+    '{tool: "bash", args: {"command":"pwd"}}',
     '{"name":"bash","arguments":{"command":123}}',
     '{"name":"bash","arguments":{"command":"pwd"}}',
     'Final after correction',
@@ -332,4 +332,58 @@ test('loop replaces blank final text with diagnostic message', async () => {
   const responseEvent = emitted.find((event) => event.type === 'agent:response');
   assert.ok(responseEvent);
   assert.equal(responseEvent.content.text, 'Model returned an empty response.');
+});
+
+test('loop treats markdown answers as final output instead of parse-error retry', async () => {
+  const bus = createEventBus();
+  const emitted = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  const provider = createSequencedProvider(['## Result\n\n- item 1\n- item 2']);
+  const parser = {
+    parse() {
+      return { kind: 'parse_error', error: 'should not be used for plain markdown' };
+    },
+  };
+
+  const loop = createAgentLoop({
+    bus,
+    provider,
+    parser,
+    toolRegistry: {
+      list() {
+        return [{ name: 'bash', description: 'run shell', schema: { type: 'object' } }];
+      },
+      validateCall() {
+        return { valid: true, errors: [] };
+      },
+      async execute() {
+        return {};
+      },
+    },
+    maxTokens: 128,
+  });
+
+  loop.start();
+  await bus.emit({
+    type: 'user:input',
+    channel: 'tui',
+    sessionId: 's5',
+    content: { text: 'respond in markdown' },
+  });
+
+  await waitFor(() => emitted.some((event) => event.type === 'agent:response'));
+  loop.stop();
+
+  const parseRetry = emitted.find(
+    (event) => event.type === 'agent:status' && event.content.phase === 'parse:retry',
+  );
+  assert.equal(parseRetry, undefined);
+
+  const responseEvent = emitted.find((event) => event.type === 'agent:response');
+  assert.ok(responseEvent);
+  assert.equal(responseEvent.content.text, '## Result\n\n- item 1\n- item 2');
 });

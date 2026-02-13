@@ -26,6 +26,18 @@ function defaultBuildMessages(event) {
   return [{ role: 'user', content: coerceInputText(event) }];
 }
 
+function shouldAttemptTextToolParse(text, finishReason) {
+  if (finishReason === 'tool_calls') {
+    return true;
+  }
+
+  if (typeof text !== 'string') {
+    return false;
+  }
+
+  return text.trimStart().startsWith('{');
+}
+
 function buildCorrectionPrompt(reason) {
   return [
     'Your previous response was invalid for tool execution.',
@@ -208,6 +220,35 @@ export class AgentLoop {
         }
 
         continue;
+      }
+
+      if (!shouldAttemptTextToolParse(completion.text, completion.finishReason)) {
+        const plainText = typeof completion.text === 'string' ? completion.text.trim() : '';
+        const finalText = plainText.length > 0 ? plainText : 'Model returned an empty response.';
+
+        this.#queueEmit({
+          type: 'agent:response',
+          channel: event.channel,
+          sessionId: event.sessionId,
+          content: {
+            text: finalText,
+            finishReason: completion.finishReason,
+            usage: completion.usage,
+          },
+        });
+
+        if (event.type === 'task:step:start') {
+          this.#queueEmit({
+            type: 'task:step:complete',
+            channel: event.channel,
+            sessionId: event.sessionId,
+            content: {
+              result: finalText,
+            },
+          });
+        }
+
+        return;
       }
 
       const parsed = this.#parser.parse(completion.text);
