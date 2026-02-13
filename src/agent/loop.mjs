@@ -7,6 +7,7 @@ const DEFAULT_PROCESSABLE_EVENTS = new Set([
 ]);
 
 const DEFAULT_RETRY_LIMIT = 2;
+const EMPTY_RESPONSE_TEXT = 'Model returned an empty response.';
 
 function coerceInputText(event) {
   const { content } = event;
@@ -55,6 +56,11 @@ function getToolDefinitions(toolRegistry) {
 
   const listed = toolRegistry.list();
   return Array.isArray(listed) ? listed : [];
+}
+
+function normalizeFinalText(text) {
+  const normalized = typeof text === 'string' ? text.trim() : '';
+  return normalized.length > 0 ? normalized : EMPTY_RESPONSE_TEXT;
 }
 
 export class AgentLoop {
@@ -109,11 +115,6 @@ export class AgentLoop {
     this.#bus = bus;
     this.#provider = provider;
     this.#parser = parser;
-    this.#contextManager =
-      contextManager ??
-      createAgentContext({
-        outputReserve: maxTokens,
-      });
     this.#toolRegistry = toolRegistry;
     this.#maxTokens = maxTokens;
     this.#maxToolCallsPerStep = maxToolCallsPerStep;
@@ -121,27 +122,7 @@ export class AgentLoop {
     this.#unsubscribe = null;
     this.#pendingEmits = new Set();
 
-    if (buildMessages) {
-      this.#contextManager = {
-        buildMessages(input) {
-          return {
-            messages: buildMessages(input.event),
-            maxOutputTokens: maxTokens,
-          };
-        },
-      };
-    }
-
-    if (!this.#contextManager || typeof this.#contextManager.buildMessages !== 'function') {
-      this.#contextManager = {
-        buildMessages(input) {
-          return {
-            messages: defaultBuildMessages(input.event),
-            maxOutputTokens: maxTokens,
-          };
-        },
-      };
-    }
+    this.#contextManager = this.#createContextManager({ contextManager, buildMessages, maxTokens });
   }
 
   start() {
@@ -167,7 +148,33 @@ export class AgentLoop {
     this.#unsubscribe = null;
   }
 
-  async #handleEvent(event) {
+  #createContextManager({ contextManager, buildMessages, maxTokens }) {
+    if (buildMessages) {
+      return {
+        buildMessages(input) {
+          return {
+            messages: buildMessages(input.event),
+            maxOutputTokens: maxTokens,
+          };
+        },
+      };
+    }
+
+    if (contextManager && typeof contextManager.buildMessages === 'function') {
+      return contextManager;
+    }
+
+    return {
+      buildMessages(input) {
+        return {
+          messages: defaultBuildMessages(input.event),
+          maxOutputTokens: maxTokens,
+        };
+      },
+    };
+  }
+
+  #buildInitialContext(event) {
     const builtContext = this.#contextManager.buildMessages({
       event,
       mode: event.type === 'task:step:start' ? 'step' : 'interactive',
@@ -175,10 +182,16 @@ export class AgentLoop {
       step: event.type === 'task:step:start' ? event.content?.step ?? null : null,
     });
 
-    const messages = [...(builtContext.messages ?? defaultBuildMessages(event))];
-    const maxOutputTokens = Number.isInteger(builtContext.maxOutputTokens)
-      ? builtContext.maxOutputTokens
-      : this.#maxTokens;
+    return {
+      messages: [...(builtContext.messages ?? defaultBuildMessages(event))],
+      maxOutputTokens: Number.isInteger(builtContext.maxOutputTokens)
+        ? builtContext.maxOutputTokens
+        : this.#maxTokens,
+    };
+  }
+
+  async #handleEvent(event) {
+    const { messages, maxOutputTokens } = this.#buildInitialContext(event);
 
     let toolCalls = 0;
     let correctionRetries = 0;
@@ -196,18 +209,16 @@ export class AgentLoop {
         : null;
 
       if (nativeToolCall) {
-        const parsedToolCall = {
-          toolName: nativeToolCall.name,
-          arguments: nativeToolCall.arguments ?? {},
-          toolCallId: nativeToolCall.id,
-          rawAssistantText: completion.text,
-        };
-
         const handled = await this.#handleToolCall({
           event,
           messages,
           completion,
-          parsedToolCall,
+          parsedToolCall: {
+            toolName: nativeToolCall.name,
+            arguments: nativeToolCall.arguments ?? {},
+            toolCallId: nativeToolCall.id,
+            rawAssistantText: completion.text,
+          },
           toolCalls,
           correctionRetries,
         });
@@ -222,84 +233,28 @@ export class AgentLoop {
         continue;
       }
 
-      if (!shouldAttemptTextToolParse(completion.text, completion.finishReason)) {
-        const plainText = typeof completion.text === 'string' ? completion.text.trim() : '';
-        const finalText = plainText.length > 0 ? plainText : 'Model returned an empty response.';
+      const parsed = this.#parseCompletion(completion);
 
-        this.#queueEmit({
-          type: 'agent:response',
-          channel: event.channel,
-          sessionId: event.sessionId,
-          content: {
-            text: finalText,
-            finishReason: completion.finishReason,
-            usage: completion.usage,
-          },
-        });
-
-        if (event.type === 'task:step:start') {
-          this.#queueEmit({
-            type: 'task:step:complete',
-            channel: event.channel,
-            sessionId: event.sessionId,
-            content: {
-              result: finalText,
-            },
-          });
-        }
-
+      if (parsed.kind === 'emit_final') {
+        this.#emitFinal(event, completion, parsed.text);
         return;
       }
 
-      const parsed = this.#parser.parse(completion.text);
+      if (parsed.kind === 'retry_parse') {
+        const retry = this.#handleParseRetry({
+          event,
+          messages,
+          completion,
+          correctionRetries,
+          error: parsed.error,
+        });
 
-      if (parsed.kind === 'parse_error') {
-        const shouldRetry = correctionRetries < this.#retryLimit;
-        if (!shouldRetry) {
-          this.#emitCorrectionFailure(event, 'Unable to parse model tool JSON after retries.');
+        if (retry.done) {
           return;
         }
 
-        correctionRetries += 1;
-        messages.push({ role: 'assistant', content: completion.text });
-        messages.push({ role: 'system', content: buildCorrectionPrompt(parsed.error) });
-        this.#queueEmit({
-          type: 'agent:status',
-          channel: event.channel,
-          sessionId: event.sessionId,
-          content: {
-            phase: 'parse:retry',
-            text: `Retrying response parse (${correctionRetries}/${this.#retryLimit}).`,
-          },
-        });
+        correctionRetries = retry.correctionRetries;
         continue;
-      }
-
-      if (parsed.kind === 'final') {
-        const finalText = parsed.text.trim().length > 0 ? parsed.text : 'Model returned an empty response.';
-        this.#queueEmit({
-          type: 'agent:response',
-          channel: event.channel,
-          sessionId: event.sessionId,
-          content: {
-            text: finalText,
-            finishReason: completion.finishReason,
-            usage: completion.usage,
-          },
-        });
-
-        if (event.type === 'task:step:start') {
-          this.#queueEmit({
-            type: 'task:step:complete',
-            channel: event.channel,
-            sessionId: event.sessionId,
-            content: {
-              result: finalText,
-            },
-          });
-        }
-
-        return;
       }
 
       const handled = await this.#handleToolCall({
@@ -322,6 +277,86 @@ export class AgentLoop {
       if (handled.done) {
         return;
       }
+    }
+  }
+
+  #parseCompletion(completion) {
+    if (!shouldAttemptTextToolParse(completion.text, completion.finishReason)) {
+      return {
+        kind: 'emit_final',
+        text: completion.text,
+      };
+    }
+
+    const parsed = this.#parser.parse(completion.text);
+
+    if (parsed.kind === 'parse_error') {
+      return {
+        kind: 'retry_parse',
+        error: parsed.error,
+      };
+    }
+
+    if (parsed.kind === 'final') {
+      return {
+        kind: 'emit_final',
+        text: parsed.text,
+      };
+    }
+
+    return {
+      kind: 'tool_call',
+      toolName: parsed.toolName,
+      arguments: parsed.arguments,
+    };
+  }
+
+  #handleParseRetry({ event, messages, completion, correctionRetries, error }) {
+    const shouldRetry = correctionRetries < this.#retryLimit;
+    if (!shouldRetry) {
+      this.#emitCorrectionFailure(event, 'Unable to parse model tool JSON after retries.');
+      return { done: true, correctionRetries };
+    }
+
+    const nextRetries = correctionRetries + 1;
+    messages.push({ role: 'assistant', content: completion.text });
+    messages.push({ role: 'system', content: buildCorrectionPrompt(error) });
+    this.#queueEmit({
+      type: 'agent:status',
+      channel: event.channel,
+      sessionId: event.sessionId,
+      content: {
+        phase: 'parse:retry',
+        text: `Retrying response parse (${nextRetries}/${this.#retryLimit}).`,
+      },
+    });
+
+    return { done: false, correctionRetries: nextRetries };
+  }
+
+  #emitFinal(event, completion, text) {
+    const finalText = normalizeFinalText(text);
+
+    this.#queueEmit({
+      type: 'agent:response',
+      channel: event.channel,
+      sessionId: event.sessionId,
+      content: {
+        text: finalText,
+        finishReason: completion.finishReason,
+        usage: completion.usage,
+      },
+    });
+
+    if (event.type === 'task:step:start') {
+      this.#queueEmit({
+        type: 'task:step:complete',
+        channel: event.channel,
+        sessionId: event.sessionId,
+        content: {
+          result: finalText,
+        },
+      });
     }
   }
 
@@ -365,7 +400,7 @@ export class AgentLoop {
       };
     }
 
-    let nextToolCalls = toolCalls + 1;
+    const nextToolCalls = toolCalls + 1;
     if (nextToolCalls > this.#maxToolCallsPerStep) {
       this.#queueEmit({
         type: 'agent:response',
