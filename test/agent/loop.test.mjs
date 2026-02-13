@@ -37,7 +37,7 @@ async function waitFor(predicate, { timeoutMs = 500, intervalMs = 10 } = {}) {
   throw new Error('Timed out waiting for condition.');
 }
 
-test('loop executes tool call and emits final agent response', async () => {
+test('loop executes tool call and emits status + final response', async () => {
   const bus = createEventBus();
   const emitted = [];
 
@@ -96,12 +96,17 @@ test('loop executes tool call and emits final agent response', async () => {
   assert.equal(toolRegistry.calls.length, 1);
   assert.equal(toolRegistry.calls[0].name, 'bash');
 
-  const toolCallEvent = emitted.find((event) => event.type === 'tool:call');
-  assert.ok(toolCallEvent);
+  const toolStartStatus = emitted.find(
+    (event) => event.type === 'agent:status' && event.content.phase === 'tool:start',
+  );
+  assert.ok(toolStartStatus);
+  assert.equal(toolStartStatus.content.tool.name, 'bash');
 
-  const toolResultEvent = emitted.find((event) => event.type === 'tool:result');
-  assert.ok(toolResultEvent);
-  assert.deepEqual(toolResultEvent.content.result, { stdout: 'hi' });
+  const toolDoneStatus = emitted.find(
+    (event) => event.type === 'agent:status' && event.content.phase === 'tool:complete',
+  );
+  assert.ok(toolDoneStatus);
+  assert.equal(toolDoneStatus.content.tool.name, 'bash');
 
   const responseEvent = emitted.find((event) => event.type === 'agent:response');
   assert.ok(responseEvent);

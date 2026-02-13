@@ -151,12 +151,16 @@ export class AgentLoop {
       }
 
       this.#queueEmit({
-        type: 'tool:call',
+        type: 'agent:status',
         channel: event.channel,
         sessionId: event.sessionId,
         content: {
-          name: parsed.toolName,
-          arguments: parsed.arguments,
+          phase: 'tool:start',
+          text: `Running tool: ${parsed.toolName}`,
+          tool: {
+            name: parsed.toolName,
+            arguments: parsed.arguments,
+          },
         },
       });
 
@@ -167,12 +171,15 @@ export class AgentLoop {
       });
 
       this.#queueEmit({
-        type: 'tool:result',
+        type: 'agent:status',
         channel: event.channel,
         sessionId: event.sessionId,
         content: {
-          name: parsed.toolName,
-          result: toolResult,
+          phase: 'tool:complete',
+          text: `Tool complete: ${parsed.toolName}`,
+          tool: {
+            name: parsed.toolName,
+          },
         },
       });
 

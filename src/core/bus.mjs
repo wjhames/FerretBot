@@ -6,8 +6,7 @@ const DEFAULT_ALLOWED_EVENT_TYPES = [
   'task:step:start',
   'task:step:complete',
   'task:complete',
-  'tool:call',
-  'tool:result',
+  'agent:status',
 ];
 
 export class EventBus {
