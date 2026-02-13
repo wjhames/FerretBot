@@ -4,10 +4,12 @@
   "private": true,
   "description": "Local-first, event-driven AI agent system scaffold.",
   "type": "module",
-  "main": "src/index.mjs",
+  "main": "src/agent.mjs",
   "scripts": {
-    "dev": "node --watch src/index.mjs",
-    "start": "node src/index.mjs",
+    "dev": "node --watch src/agent.mjs",
+    "start": "node src/agent.mjs",
+    "agent": "node src/agent.mjs",
+    "tui": "node src/clients/tui.mjs",
     "test": "node --test"
   },
   "engines": {
