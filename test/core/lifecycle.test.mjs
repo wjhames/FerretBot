@@ -197,3 +197,38 @@ test('lifecycle responds to SIGTERM and shuts down once', async () => {
     'loop.stop',
   ]);
 });
+
+test('lifecycle default tool registry registers built-in tools', async () => {
+  const lifecycle = createAgentLifecycle({
+    loadConfig: async () => ({
+      tools: {
+        rootDir: process.cwd(),
+        cwd: process.cwd(),
+      },
+    }),
+    createProvider: () => ({ chatCompletion: async () => ({ text: '', usage: {}, finishReason: 'stop' }) }),
+    createParser: () => ({ parse: () => ({ kind: 'final', text: '' }) }),
+    createAgentLoop: () => ({
+      start() {},
+      stop() {},
+    }),
+    createIpcServer: () => ({
+      async start() {},
+      async stopAccepting() {},
+      async disconnectAllClients() {},
+    }),
+    createScheduler: () => ({
+      async restore() {},
+      async start() {},
+      async stop() {},
+    }),
+  });
+
+  const runtime = await lifecycle.start();
+
+  assert.equal(runtime.toolRegistry.has('bash'), true);
+  assert.equal(runtime.toolRegistry.has('read'), true);
+  assert.equal(runtime.toolRegistry.has('write'), true);
+
+  await lifecycle.shutdown('test');
+});

@@ -4,9 +4,11 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { createEventBus } from './bus.mjs';
+import { createIpcServer } from './ipc.mjs';
 import { createLmStudioProvider } from '../provider/lmstudio.mjs';
 import { createAgentParser } from '../agent/parser.mjs';
 import { createAgentLoop } from '../agent/loop.mjs';
+import { createToolRegistry } from '../tools/registry.mjs';
 
 const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.agent', 'config.json');
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -23,22 +25,6 @@ async function defaultLoadConfig(configPath = DEFAULT_CONFIG_PATH) {
 
     throw error;
   }
-}
-
-function createNoopToolRegistry() {
-  return {
-    async execute() {
-      throw new Error('No tool registry configured.');
-    },
-  };
-}
-
-function createNoopIpcServer() {
-  return {
-    async start() {},
-    async stopAccepting() {},
-    async disconnectAllClients() {},
-  };
 }
 
 function createNoopScheduler() {
@@ -59,6 +45,23 @@ async function drainBusQueue(bus, { timeoutMs, pollMs }) {
 
     await delay(pollMs);
   }
+}
+
+function defaultCreateToolRegistry(config = {}) {
+  return createToolRegistry({
+    cwd: config.tools?.cwd,
+    rootDir: config.tools?.rootDir,
+    maxReadBytes: config.tools?.maxReadBytes,
+  });
+}
+
+function defaultCreateIpcServer({ bus, config = {} }) {
+  return createIpcServer({
+    bus,
+    socketPath: config.ipc?.socketPath,
+    host: config.ipc?.host,
+    port: config.ipc?.port,
+  });
 }
 
 export class AgentLifecycle {
@@ -91,9 +94,9 @@ export class AgentLifecycle {
     this.#createBus = options.createBus ?? ((_) => createEventBus());
     this.#createProvider = options.createProvider ?? ((config) => createLmStudioProvider(config.provider));
     this.#createParser = options.createParser ?? (() => createAgentParser());
-    this.#createToolRegistry = options.createToolRegistry ?? ((_) => createNoopToolRegistry());
+    this.#createToolRegistry = options.createToolRegistry ?? defaultCreateToolRegistry;
     this.#createAgentLoop = options.createAgentLoop ?? ((deps) => createAgentLoop(deps));
-    this.#createIpcServer = options.createIpcServer ?? ((_) => createNoopIpcServer());
+    this.#createIpcServer = options.createIpcServer ?? defaultCreateIpcServer;
     this.#createScheduler = options.createScheduler ?? ((_) => createNoopScheduler());
     this.#persistState = options.persistState ?? (async () => {});
 
@@ -244,4 +247,11 @@ export function createAgentLifecycle(options) {
   return new AgentLifecycle(options);
 }
 
-export { DEFAULT_CONFIG_PATH, DEFAULT_SHUTDOWN_TIMEOUT_MS, DEFAULT_DRAIN_POLL_MS, defaultLoadConfig };
+export {
+  DEFAULT_CONFIG_PATH,
+  DEFAULT_SHUTDOWN_TIMEOUT_MS,
+  DEFAULT_DRAIN_POLL_MS,
+  defaultLoadConfig,
+  defaultCreateToolRegistry,
+  defaultCreateIpcServer,
+};
