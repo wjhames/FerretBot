@@ -1,5 +1,80 @@
-const DEFAULT_BASE_URL = 'http://localhost:1234/v1';
+const DEFAULT_BASE_URL = 'http://192.168.1.7:1234/v1';
 const DEFAULT_TIMEOUT_MS = 60_000;
+
+function safeJsonParse(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeContent(content) {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    const parts = content
+      .map((part) => {
+        if (!part || typeof part !== 'object') {
+          return '';
+        }
+
+        if (typeof part.text === 'string') {
+          return part.text;
+        }
+
+        if (typeof part.content === 'string') {
+          return part.content;
+        }
+
+        return '';
+      })
+      .filter((part) => part.length > 0);
+
+    return parts.join('\n');
+  }
+
+  return '';
+}
+
+function normalizeToolCallToText(firstChoice) {
+  const message = firstChoice?.message;
+  const toolCall = Array.isArray(message?.tool_calls) ? message.tool_calls[0] : null;
+  if (toolCall?.function?.name) {
+    const parsedArgs = safeJsonParse(toolCall.function.arguments);
+    const args = parsedArgs && typeof parsedArgs === 'object' ? parsedArgs : {};
+    return JSON.stringify({
+      tool: toolCall.function.name,
+      args,
+    });
+  }
+
+  if (message?.function_call?.name) {
+    const parsedArgs = safeJsonParse(message.function_call.arguments);
+    const args = parsedArgs && typeof parsedArgs === 'object' ? parsedArgs : {};
+    return JSON.stringify({
+      tool: message.function_call.name,
+      args,
+    });
+  }
+
+  if (typeof firstChoice?.text === 'string') {
+    return firstChoice.text;
+  }
+
+  return '';
+}
+
+function normalizeCompletionText(firstChoice) {
+  const content = normalizeContent(firstChoice?.message?.content);
+  if (content.length > 0) {
+    return content;
+  }
+
+  return normalizeToolCallToText(firstChoice);
+}
 
 export class LmStudioProvider {
   #baseUrl;
@@ -12,7 +87,7 @@ export class LmStudioProvider {
   constructor(options = {}) {
     const {
       baseUrl = DEFAULT_BASE_URL,
-      model = null,
+      model = 'openai/gpt-oss-20b',
       temperature = 0,
       topP = 1,
       timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -77,7 +152,7 @@ export class LmStudioProvider {
     return {
       id: response.id ?? null,
       model: response.model ?? model,
-      text: firstChoice?.message?.content ?? '',
+      text: normalizeCompletionText(firstChoice),
       finishReason: firstChoice?.finish_reason ?? null,
       usage: {
         promptTokens: response.usage?.prompt_tokens ?? 0,
@@ -103,7 +178,9 @@ export class LmStudioProvider {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(`LM Studio request failed (${response.status}): ${errorBody}`);
+      throw new Error(
+        `LM Studio request failed (${response.status}): ${errorBody}`,
+      );
     }
 
     return response.json();

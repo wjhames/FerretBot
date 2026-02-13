@@ -261,3 +261,49 @@ test('loop retries on parse/validation errors and then succeeds', async () => {
   const responseEvent = emitted.find((event) => event.type === 'agent:response');
   assert.equal(responseEvent.content.text, 'Final after correction');
 });
+
+test('loop replaces blank final text with diagnostic message', async () => {
+  const bus = createEventBus();
+  const emitted = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  const provider = createSequencedProvider(['']);
+  const parser = {
+    parse(text) {
+      return { kind: 'final', text };
+    },
+  };
+
+  const loop = createAgentLoop({
+    bus,
+    provider,
+    parser,
+    toolRegistry: {
+      validateCall() {
+        return { valid: true, errors: [] };
+      },
+      async execute() {
+        return {};
+      },
+    },
+    maxTokens: 128,
+  });
+
+  loop.start();
+  await bus.emit({
+    type: 'user:input',
+    channel: 'tui',
+    sessionId: 's4',
+    content: { text: 'say something' },
+  });
+
+  await waitFor(() => emitted.some((event) => event.type === 'agent:response'));
+  loop.stop();
+
+  const responseEvent = emitted.find((event) => event.type === 'agent:response');
+  assert.ok(responseEvent);
+  assert.equal(responseEvent.content.text, 'Model returned an empty response.');
+});

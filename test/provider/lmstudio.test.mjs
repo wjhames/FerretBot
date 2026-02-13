@@ -73,3 +73,72 @@ test('chatCompletion rejects calls without explicit maxTokens', async () => {
     /maxTokens must be a positive integer/,
   );
 });
+
+test('chatCompletion normalizes OpenAI content arrays and tool_calls', async () => {
+  const provider = createLmStudioProvider({
+    model: 'gpt-oss:20b',
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          id: 'chatcmpl_2',
+          model: 'gpt-oss:20b',
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: [{ type: 'text', text: 'part 1' }, { type: 'text', text: 'part 2' }],
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {},
+        };
+      },
+    }),
+  });
+
+  const contentResult = await provider.chatCompletion({
+    messages: [{ role: 'user', content: 'hi' }],
+    maxTokens: 128,
+  });
+  assert.equal(contentResult.text, 'part 1\npart 2');
+
+  const providerWithToolCalls = createLmStudioProvider({
+    model: 'gpt-oss:20b',
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'call_1',
+                    type: 'function',
+                    function: {
+                      name: 'bash',
+                      arguments: '{"command":"pwd"}',
+                    },
+                  },
+                ],
+              },
+              finish_reason: 'tool_calls',
+            },
+          ],
+        };
+      },
+    }),
+  });
+
+  const toolCallResult = await providerWithToolCalls.chatCompletion({
+    messages: [{ role: 'user', content: 'use tool' }],
+    maxTokens: 128,
+  });
+
+  assert.equal(toolCallResult.text, '{"tool":"bash","args":{"command":"pwd"}}');
+  assert.equal(toolCallResult.finishReason, 'tool_calls');
+});

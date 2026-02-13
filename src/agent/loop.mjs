@@ -193,12 +193,13 @@ export class AgentLoop {
       }
 
       if (parsed.kind === 'final') {
+        const finalText = parsed.text.trim().length > 0 ? parsed.text : 'Model returned an empty response.';
         this.#queueEmit({
           type: 'agent:response',
           channel: event.channel,
           sessionId: event.sessionId,
           content: {
-            text: parsed.text,
+            text: finalText,
             finishReason: completion.finishReason,
             usage: completion.usage,
           },
@@ -210,7 +211,7 @@ export class AgentLoop {
             channel: event.channel,
             sessionId: event.sessionId,
             content: {
-              result: parsed.text,
+              result: finalText,
             },
           });
         }
