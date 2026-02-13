@@ -30,3 +30,19 @@ test('parser returns final text for non-tool output', () => {
     text: 'Here is the final answer.',
   });
 });
+
+test('parser returns parse_error for malformed tool-like JSON', () => {
+  const parser = createAgentParser();
+  const result = parser.parse('{"tool":"bash","args":{"command":"pwd",}}');
+
+  // trailing comma is repaired, so this should still parse as a tool call
+  assert.deepEqual(result, {
+    kind: 'tool_call',
+    toolName: 'bash',
+    arguments: { command: 'pwd' },
+  });
+
+  const malformed = parser.parse('{tool: "bash", args: {"command":"pwd"}}');
+  assert.equal(malformed.kind, 'parse_error');
+  assert.match(malformed.error, /Unable to parse tool call JSON/);
+});

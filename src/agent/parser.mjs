@@ -25,6 +25,28 @@ function extractJsonCandidate(text) {
   return null;
 }
 
+function sanitizeJsonString(text) {
+  if (typeof text !== 'string') {
+    return '';
+  }
+
+  // Cheap normalization for common model mistakes (e.g. trailing commas).
+  return text.replace(/,\s*([}\]])/g, '$1').trim();
+}
+
+function looksLikeToolJson(text) {
+  if (typeof text !== 'string') {
+    return false;
+  }
+
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('```')) {
+    return false;
+  }
+
+  return /"?(tool|name|args|arguments)"?\s*:/.test(trimmed);
+}
+
 function coerceArguments(value) {
   if (value == null) {
     return {};
@@ -91,7 +113,7 @@ export class AgentParser {
       };
     }
 
-    const directParsed = safeJsonParse(text);
+    const directParsed = safeJsonParse(text) ?? safeJsonParse(sanitizeJsonString(text));
     const fromDirectJson = parseToolCallObject(directParsed);
     if (fromDirectJson) {
       return fromDirectJson;
@@ -99,11 +121,19 @@ export class AgentParser {
 
     const jsonCandidate = extractJsonCandidate(text);
     if (jsonCandidate) {
-      const embeddedParsed = safeJsonParse(jsonCandidate);
+      const embeddedParsed = safeJsonParse(jsonCandidate) ?? safeJsonParse(sanitizeJsonString(jsonCandidate));
       const fromEmbeddedJson = parseToolCallObject(embeddedParsed);
       if (fromEmbeddedJson) {
         return fromEmbeddedJson;
       }
+    }
+
+    if (jsonCandidate || looksLikeToolJson(text)) {
+      return {
+        kind: 'parse_error',
+        text,
+        error: 'Unable to parse tool call JSON.',
+      };
     }
 
     return {
