@@ -11,11 +11,84 @@ export const DEFAULT_LAYER_BUDGETS = Object.freeze({
   conversation: 4_000,
 });
 
+const LAYER_NAME_ALIASES = Object.freeze({
+  systemPrompt: 'system',
+  taskScope: 'task',
+  skillContent: 'skills',
+  priorContext: 'prior',
+});
+
+const FIXED_LAYER_NAMES = ['system', 'task', 'skills', 'prior'];
+
 const DEFAULT_TOKEN_ESTIMATOR_CONFIG = Object.freeze({
   charsPerToken: 4,
   safetyMargin: 1.1,
 });
 
+function normalizeBudgetValue(value, fallback) {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.floor(value));
+}
+
+function mapLayerBudgetKeys(rawBudgets = {}) {
+  const mapped = {};
+
+  for (const [key, value] of Object.entries(rawBudgets)) {
+    const canonical = LAYER_NAME_ALIASES[key] ?? key;
+    mapped[canonical] = value;
+  }
+
+  return mapped;
+}
+
+function scaleFixedLayerBudgets(budgets, inputBudget) {
+  const sanitized = { ...budgets };
+  const totalFixed = FIXED_LAYER_NAMES.reduce((sum, layer) => sum + sanitized[layer], 0);
+
+  if (totalFixed <= inputBudget) {
+    return sanitized;
+  }
+
+  const scale = inputBudget / totalFixed;
+  let scaledTotal = 0;
+
+  for (const layer of FIXED_LAYER_NAMES) {
+    const scaledValue = Math.max(0, Math.floor(sanitized[layer] * scale));
+    sanitized[layer] = scaledValue;
+    scaledTotal += scaledValue;
+  }
+
+  let remainder = Math.max(0, inputBudget - scaledTotal);
+  for (const layer of FIXED_LAYER_NAMES) {
+    if (remainder <= 0) {
+      break;
+    }
+
+    sanitized[layer] += 1;
+    remainder -= 1;
+  }
+
+  return sanitized;
+}
+
+function normalizeLayerBudgetConfig(rawBudgets, inputBudget) {
+  const sanitized = { ...DEFAULT_LAYER_BUDGETS };
+  const mapped = mapLayerBudgetKeys(rawBudgets);
+  const normalizedInputBudget = Math.max(0, inputBudget);
+
+  for (const [name, value] of Object.entries(mapped)) {
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_LAYER_BUDGETS, name)) {
+      continue;
+    }
+
+    sanitized[name] = normalizeBudgetValue(value, sanitized[name]);
+  }
+
+  return scaleFixedLayerBudgets(sanitized, normalizedInputBudget);
+}
 function toText(value) {
   if (typeof value === 'string') {
     return value;
@@ -172,7 +245,8 @@ export class AgentContext {
   constructor(options = {}) {
     this.#contextLimit = options.contextLimit ?? DEFAULT_CONTEXT_LIMIT;
     this.#outputReserve = options.outputReserve ?? DEFAULT_OUTPUT_RESERVE;
-    this.#layerBudgets = { ...DEFAULT_LAYER_BUDGETS, ...(options.layerBudgets ?? {}) };
+    const inputBudget = Math.max(0, this.#contextLimit - this.#outputReserve);
+    this.#layerBudgets = normalizeLayerBudgetConfig(options.layerBudgets ?? {}, inputBudget);
     this.#tokenEstimatorConfig = {
       ...DEFAULT_TOKEN_ESTIMATOR_CONFIG,
       ...(options.tokenEstimatorConfig ?? {}),
@@ -181,6 +255,10 @@ export class AgentContext {
     if (this.#outputReserve >= this.#contextLimit) {
       throw new TypeError('outputReserve must be smaller than contextLimit.');
     }
+  }
+
+  getLayerBudgets() {
+    return { ...this.#layerBudgets };
   }
 
   buildMessages(input = {}) {

@@ -79,3 +79,45 @@ test('helper functions provide stable token and compaction behavior', () => {
   assert.match(tools, /Tool: read/);
   assert.match(tools, /Schema:/);
 });
+
+test('layer budgets accept alias names and preserve configured values', () => {
+  const context = createAgentContext({
+    contextLimit: 3_000,
+    outputReserve: 500,
+    layerBudgets: {
+      systemPrompt: 700,
+      taskScope: 1_100,
+      skillContent: 400,
+      priorContext: 200,
+      conversation: 800,
+    },
+  });
+
+  const budgets = context.getLayerBudgets();
+  assert.equal(budgets.system, 700);
+  assert.equal(budgets.task, 1_100);
+  assert.equal(budgets.skills, 400);
+  assert.equal(budgets.prior, 200);
+  assert.equal(budgets.conversation, 800);
+});
+
+test('layer budgets scale when fixed layers exceed the input budget', () => {
+  const context = createAgentContext({
+    contextLimit: 1_200,
+    outputReserve: 200,
+    layerBudgets: {
+      system: 400,
+      task: 400,
+      skills: 400,
+      prior: 400,
+    },
+  });
+
+  const budgets = context.getLayerBudgets();
+  const totalFixed = budgets.system + budgets.task + budgets.skills + budgets.prior;
+  assert.equal(totalFixed, 1_000);
+  assert.ok(budgets.system <= 400);
+  assert.ok(budgets.task <= 400);
+  assert.ok(budgets.skills <= 400);
+  assert.ok(budgets.prior <= 400);
+});
