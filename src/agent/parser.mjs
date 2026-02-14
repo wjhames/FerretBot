@@ -6,6 +6,21 @@ function safeJsonParse(value) {
   }
 }
 
+const MAX_ERROR_SNIPPET_CHARS = 280;
+
+function compactErrorSnippet(text) {
+  if (typeof text !== 'string') {
+    return '';
+  }
+
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= MAX_ERROR_SNIPPET_CHARS) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, MAX_ERROR_SNIPPET_CHARS - 3)}...`;
+}
+
 function extractJsonCandidates(text) {
   if (typeof text !== 'string') {
     return [];
@@ -177,7 +192,7 @@ export class AgentParser {
       }
     }
 
-    const errorHint = jsonCandidates.length > 0 ? jsonCandidates[0] : text;
+    const errorHint = compactErrorSnippet(jsonCandidates.length > 0 ? jsonCandidates[0] : text);
     if (jsonCandidates.length > 0 || looksLikeToolJson(text)) {
       return {
         kind: 'parse_error',

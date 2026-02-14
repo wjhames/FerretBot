@@ -72,3 +72,14 @@ test('parser surfaces candidate snippet when failing', () => {
   assert.equal(broken.kind, 'parse_error');
   assert.match(broken.error, /Candidate snippet:/);
 });
+
+test('parser truncates oversized candidate snippets in parse errors', () => {
+  const parser = createAgentParser();
+  const oversized = '{"tool":"read","arguments":{' + 'x'.repeat(800);
+  const broken = parser.parse(oversized);
+
+  assert.equal(broken.kind, 'parse_error');
+  assert.match(broken.error, /Candidate snippet:/);
+  assert.ok(broken.error.length < 400);
+  assert.match(broken.error, /\.\.\.$/);
+});

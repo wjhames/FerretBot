@@ -32,3 +32,14 @@ The agent is headless and can run with zero clients connected.
 
 - Empty/very short answers:
   The loop now emits a fallback message for empty model output. If frequent, inspect LM Studio model state and prompt/tool context.
+
+## Phase 2 Robustness Notes
+
+- Parse retries:
+  On malformed tool JSON, the loop sends a correction prompt and retries up to 2 times before returning `parse_failed`.
+
+- Parse error hints:
+  Parser errors include a compact candidate snippet so debugging is easier without blowing up context size.
+
+- Context budgeting:
+  Layer budget aliases (`systemPrompt`, `taskScope`, `skillContent`, `priorContext`) are normalized to runtime layer names and fixed layers are scaled to fit the current input budget.
