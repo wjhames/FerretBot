@@ -1,12 +1,17 @@
 import {
+  DEFAULT_LMSTUDIO_BASE_URL,
+  DEFAULT_LMSTUDIO_MODEL,
+  DEFAULT_LMSTUDIO_TIMEOUT_MS,
+} from '../core/config-defaults.mjs';
+import {
   normalizeCompletionText,
   normalizeToolCalls,
   normalizeToolDefinitions,
   normalizeUsage,
 } from './lmstudio-normalize.mjs';
 
-const DEFAULT_BASE_URL = 'http://192.168.1.7:1234/v1';
-const DEFAULT_TIMEOUT_MS = 300_000;
+const DEFAULT_BASE_URL = DEFAULT_LMSTUDIO_BASE_URL;
+const DEFAULT_TIMEOUT_MS = DEFAULT_LMSTUDIO_TIMEOUT_MS;
 
 export class LmStudioProvider {
   #baseUrl;
@@ -19,7 +24,7 @@ export class LmStudioProvider {
   constructor(options = {}) {
     const {
       baseUrl = DEFAULT_BASE_URL,
-      model = 'openai/gpt-oss-20b',
+      model = DEFAULT_LMSTUDIO_MODEL,
       temperature = 0,
       topP = 1,
       timeoutMs = DEFAULT_TIMEOUT_MS,

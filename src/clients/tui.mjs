@@ -1,9 +1,10 @@
 import net from 'node:net';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import os from 'node:os';
 
-const DEFAULT_SOCKET_PATH = path.join(os.homedir(), '.agent', 'agent.sock');
+import { DEFAULT_AGENT_SOCKET_PATH } from '../core/config-defaults.mjs';
+
+const DEFAULT_SOCKET_PATH = DEFAULT_AGENT_SOCKET_PATH;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = null;
 

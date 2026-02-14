@@ -1,9 +1,10 @@
 import { promises as fs } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 
-const DEFAULT_SOCKET_PATH = path.join(os.homedir(), '.agent', 'agent.sock');
+import { DEFAULT_AGENT_SOCKET_PATH } from './config-defaults.mjs';
+
+const DEFAULT_SOCKET_PATH = DEFAULT_AGENT_SOCKET_PATH;
 const OUTBOUND_EVENT_TYPES = new Set([
   'agent:response',
   'agent:status',

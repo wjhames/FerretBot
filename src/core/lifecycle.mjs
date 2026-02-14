@@ -1,8 +1,7 @@
 import { promises as fs } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { DEFAULT_AGENT_CONFIG_PATH } from './config-defaults.mjs';
 import { createEventBus } from './bus.mjs';
 import { createIpcServer } from './ipc.mjs';
 import { createLmStudioProvider } from '../provider/lmstudio.mjs';
@@ -10,7 +9,7 @@ import { createAgentParser } from '../agent/parser.mjs';
 import { createAgentLoop } from '../agent/loop.mjs';
 import { createToolRegistry } from '../tools/registry.mjs';
 
-const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.agent', 'config.json');
+const DEFAULT_CONFIG_PATH = DEFAULT_AGENT_CONFIG_PATH;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 const DEFAULT_DRAIN_POLL_MS = 25;
 
