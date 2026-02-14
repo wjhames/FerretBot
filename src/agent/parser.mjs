@@ -6,23 +6,41 @@ function safeJsonParse(value) {
   }
 }
 
-function extractJsonCandidate(text) {
+function extractJsonCandidates(text) {
   if (typeof text !== 'string') {
-    return null;
+    return [];
   }
 
-  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidates = [];
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/ig);
   if (fencedMatch) {
-    return fencedMatch[1].trim();
+    fencedMatch.forEach((match) => {
+      const inner = match.replace(/```(?:json)?/i, '').replace(/```$/, '').trim();
+      if (inner.length > 0) {
+        candidates.push(inner);
+      }
+    });
   }
 
-  const firstBrace = text.indexOf('{');
-  const lastBrace = text.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    return text.slice(firstBrace, lastBrace + 1);
+  let depth = 0;
+  let start = -1;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '{') {
+      if (depth === 0) {
+        start = index;
+      }
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0 && start !== -1) {
+        candidates.push(text.slice(start, index + 1));
+        start = -1;
+      }
+    }
   }
 
-  return null;
+  return candidates;
 }
 
 function sanitizeJsonString(text) {
@@ -103,6 +121,38 @@ function parseToolCallObject(value) {
   return null;
 }
 
+function parseToolCallValue(value, sourceText) {
+  if (Array.isArray(value)) {
+    for (const element of value) {
+      const parsed = parseToolCallValue(element, sourceText);
+      if (parsed) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
+  const parsed = parseToolCallObject(value);
+  if (!parsed) {
+    return null;
+  }
+
+  if (sourceText && typeof sourceText === 'string') {
+    return { ...parsed, rawJson: sourceText };
+  }
+
+  return parsed;
+}
+
+function tryParseCandidate(candidateText) {
+  const parsedValue = safeJsonParse(candidateText) ?? safeJsonParse(sanitizeJsonString(candidateText));
+  if (!parsedValue) {
+    return null;
+  }
+
+  return parseToolCallValue(parsedValue, candidateText);
+}
+
 export class AgentParser {
   parse(rawText) {
     const text = typeof rawText === 'string' ? rawText.trim() : '';
@@ -114,25 +164,25 @@ export class AgentParser {
     }
 
     const directParsed = safeJsonParse(text) ?? safeJsonParse(sanitizeJsonString(text));
-    const fromDirectJson = parseToolCallObject(directParsed);
+    const fromDirectJson = parseToolCallValue(directParsed, text);
     if (fromDirectJson) {
       return fromDirectJson;
     }
 
-    const jsonCandidate = extractJsonCandidate(text);
-    if (jsonCandidate) {
-      const embeddedParsed = safeJsonParse(jsonCandidate) ?? safeJsonParse(sanitizeJsonString(jsonCandidate));
-      const fromEmbeddedJson = parseToolCallObject(embeddedParsed);
-      if (fromEmbeddedJson) {
-        return fromEmbeddedJson;
+    const jsonCandidates = extractJsonCandidates(text);
+    for (const candidate of jsonCandidates) {
+      const parsedCandidate = tryParseCandidate(candidate);
+      if (parsedCandidate) {
+        return parsedCandidate;
       }
     }
 
-    if (jsonCandidate || looksLikeToolJson(text)) {
+    const errorHint = jsonCandidates.length > 0 ? jsonCandidates[0] : text;
+    if (jsonCandidates.length > 0 || looksLikeToolJson(text)) {
       return {
         kind: 'parse_error',
         text,
-        error: 'Unable to parse tool call JSON.',
+        error: `Unable to parse tool call JSON. Candidate snippet: ${errorHint}`,
       };
     }
 
