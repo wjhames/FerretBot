@@ -16,7 +16,11 @@ function coerceInputText(event) {
     return content;
   }
 
-  if (content && typeof content === 'object' && typeof content.text === 'string') {
+  if (
+    content &&
+    typeof content === 'object' &&
+    typeof content.text === 'string'
+  ) {
     return content.text;
   }
 
@@ -64,8 +68,14 @@ function getToolDefinitionsForEvent(toolRegistry, event) {
     return allTools;
   }
 
-  const stepTools = Array.isArray(event.content?.step?.tools) ? event.content.step.tools : [];
-  const allowed = new Set(stepTools.filter((name) => typeof name === 'string' && name.trim().length > 0));
+  const stepTools = Array.isArray(event.content?.step?.tools)
+    ? event.content.step.tools
+    : [];
+  const allowed = new Set(
+    stepTools.filter(
+      (name) => typeof name === 'string' && name.trim().length > 0,
+    ),
+  );
   allowed.add('task');
 
   return allTools.filter((tool) => allowed.has(tool.name));
@@ -96,17 +106,23 @@ export class AgentLoop {
       contextManager,
       toolRegistry = null,
       maxTokens = 1024,
-      maxToolCallsPerStep = 5,
+      maxToolCallsPerStep = 10,
       retryLimit = DEFAULT_RETRY_LIMIT,
       buildMessages,
     } = options;
 
-    if (!bus || typeof bus.on !== 'function' || typeof bus.emit !== 'function') {
+    if (
+      !bus ||
+      typeof bus.on !== 'function' ||
+      typeof bus.emit !== 'function'
+    ) {
       throw new TypeError('AgentLoop requires a bus with on/emit methods.');
     }
 
     if (!provider || typeof provider.chatCompletion !== 'function') {
-      throw new TypeError('AgentLoop requires a provider with chatCompletion().');
+      throw new TypeError(
+        'AgentLoop requires a provider with chatCompletion().',
+      );
     }
 
     if (!parser || typeof parser.parse !== 'function') {
@@ -135,7 +151,11 @@ export class AgentLoop {
     this.#unsubscribe = null;
     this.#pendingEmits = new Set();
 
-    this.#contextManager = this.#createContextManager({ contextManager, buildMessages, maxTokens });
+    this.#contextManager = this.#createContextManager({
+      contextManager,
+      buildMessages,
+      maxTokens,
+    });
   }
 
   start() {
@@ -192,7 +212,8 @@ export class AgentLoop {
       event,
       mode: event.type === 'task:step:start' ? 'step' : 'interactive',
       userInput: coerceInputText(event),
-      step: event.type === 'task:step:start' ? event.content?.step ?? null : null,
+      step:
+        event.type === 'task:step:start' ? (event.content?.step ?? null) : null,
     });
 
     return {
@@ -217,9 +238,10 @@ export class AgentLoop {
         toolChoice: 'auto',
       });
 
-      const nativeToolCall = Array.isArray(completion.toolCalls) && completion.toolCalls.length > 0
-        ? completion.toolCalls[0]
-        : null;
+      const nativeToolCall =
+        Array.isArray(completion.toolCalls) && completion.toolCalls.length > 0
+          ? completion.toolCalls[0]
+          : null;
 
       if (nativeToolCall) {
         const handled = await this.#handleToolCall({
@@ -327,7 +349,10 @@ export class AgentLoop {
   #handleParseRetry({ event, messages, completion, correctionRetries, error }) {
     const shouldRetry = correctionRetries < this.#retryLimit;
     if (!shouldRetry) {
-      this.#emitCorrectionFailure(event, 'Unable to parse model tool JSON after retries.');
+      this.#emitCorrectionFailure(
+        event,
+        'Unable to parse model tool JSON after retries.',
+      );
       return { done: true, correctionRetries };
     }
 
@@ -373,14 +398,29 @@ export class AgentLoop {
     }
   }
 
-  async #handleToolCall({ event, messages, completion, parsedToolCall, toolCalls, correctionRetries }) {
-    if (!this.#toolRegistry || typeof this.#toolRegistry.execute !== 'function') {
-      throw new Error('Tool call requested but no toolRegistry.execute is configured.');
+  async #handleToolCall({
+    event,
+    messages,
+    completion,
+    parsedToolCall,
+    toolCalls,
+    correctionRetries,
+  }) {
+    if (
+      !this.#toolRegistry ||
+      typeof this.#toolRegistry.execute !== 'function'
+    ) {
+      throw new Error(
+        'Tool call requested but no toolRegistry.execute is configured.',
+      );
     }
 
     const validation =
       typeof this.#toolRegistry.validateCall === 'function'
-        ? this.#toolRegistry.validateCall({ name: parsedToolCall.toolName, arguments: parsedToolCall.arguments })
+        ? this.#toolRegistry.validateCall({
+            name: parsedToolCall.toolName,
+            arguments: parsedToolCall.arguments,
+          })
         : { valid: true, errors: [] };
 
     if (!validation.valid) {
@@ -388,12 +428,18 @@ export class AgentLoop {
       const shouldRetry = correctionRetries < this.#retryLimit;
 
       if (!shouldRetry) {
-        this.#emitCorrectionFailure(event, 'Unable to produce a valid tool call after retries.');
+        this.#emitCorrectionFailure(
+          event,
+          'Unable to produce a valid tool call after retries.',
+        );
         return { done: true, toolCalls, correctionRetries };
       }
 
       const nextRetries = correctionRetries + 1;
-      messages.push({ role: 'assistant', content: parsedToolCall.rawAssistantText ?? completion.text });
+      messages.push({
+        role: 'assistant',
+        content: parsedToolCall.rawAssistantText ?? completion.text,
+      });
       messages.push({ role: 'system', content: buildCorrectionPrompt(reason) });
       this.#queueEmit({
         type: 'agent:status',
