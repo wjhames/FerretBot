@@ -84,3 +84,43 @@ test('registry built-ins register and execute read/write tools', async () => {
     assert.equal(read.truncated, true);
   });
 });
+
+test('registry registers task tool when bus and task manager are available', async () => {
+  await withTempDir(async (rootDir) => {
+    const busEvents = [];
+    const bus = {
+      async emit(event) {
+        busEvents.push(event);
+        return event;
+      },
+      on() {
+        return () => {};
+      },
+    };
+
+    const taskManager = {
+      getActiveStepContext() {
+        return {
+          taskId: 9,
+          goal: 'demo',
+          stepId: 2,
+          instruction: 'finish it',
+          totalSteps: 3,
+        };
+      },
+    };
+
+    const registry = createToolRegistry({ rootDir, cwd: rootDir, bus, taskManager });
+    await registry.registerBuiltIns();
+
+    assert.equal(registry.has('task'), true);
+
+    const result = await registry.execute({
+      name: 'task',
+      arguments: { action: 'note', content: 'remember this' },
+    });
+
+    assert.equal(result.status, 'noted');
+    assert.equal(busEvents[0].type, 'task:note');
+  });
+});

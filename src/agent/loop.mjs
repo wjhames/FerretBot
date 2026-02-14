@@ -58,6 +58,19 @@ function getToolDefinitions(toolRegistry) {
   return Array.isArray(listed) ? listed : [];
 }
 
+function getToolDefinitionsForEvent(toolRegistry, event) {
+  const allTools = getToolDefinitions(toolRegistry);
+  if (event.type !== 'task:step:start') {
+    return allTools;
+  }
+
+  const stepTools = Array.isArray(event.content?.step?.tools) ? event.content.step.tools : [];
+  const allowed = new Set(stepTools.filter((name) => typeof name === 'string' && name.trim().length > 0));
+  allowed.add('task');
+
+  return allTools.filter((tool) => allowed.has(tool.name));
+}
+
 function normalizeFinalText(text) {
   const normalized = typeof text === 'string' ? text.trim() : '';
   return normalized.length > 0 ? normalized : EMPTY_RESPONSE_TEXT;
@@ -200,7 +213,7 @@ export class AgentLoop {
       const completion = await this.#provider.chatCompletion({
         messages,
         maxTokens: maxOutputTokens,
-        tools: getToolDefinitions(this.#toolRegistry),
+        tools: getToolDefinitionsForEvent(this.#toolRegistry, event),
         toolChoice: 'auto',
       });
 

@@ -1,6 +1,7 @@
 import { createBashTool } from './bash.mjs';
 import { createReadTool } from './read.mjs';
 import { createWriteTool } from './write.mjs';
+import { createTaskTool } from './task.mjs';
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -117,6 +118,23 @@ const BUILT_IN_TOOLS = [
     },
     create: (options) => createWriteTool({ rootDir: options.rootDir }),
   },
+  {
+    name: 'task',
+    description: 'Update state for the active task step (complete, fail, note, skip).',
+    schema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string' },
+        result: { type: 'string' },
+        reason: { type: 'string' },
+        content: { type: 'string' },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+    shouldRegister: (options) => Boolean(options.bus && options.taskManager),
+    create: (options) => createTaskTool({ bus: options.bus, taskManager: options.taskManager }),
+  },
 ];
 
 export class ToolRegistry {
@@ -129,6 +147,8 @@ export class ToolRegistry {
       cwd: options.cwd ?? process.cwd(),
       rootDir: options.rootDir ?? process.cwd(),
       maxReadBytes: options.maxReadBytes,
+      bus: options.bus,
+      taskManager: options.taskManager,
     };
   }
 
@@ -150,6 +170,10 @@ export class ToolRegistry {
   async registerBuiltIns() {
     for (const builtIn of BUILT_IN_TOOLS) {
       if (this.#tools.has(builtIn.name)) {
+        continue;
+      }
+
+      if (typeof builtIn.shouldRegister === 'function' && !builtIn.shouldRegister(this.#builtInOptions)) {
         continue;
       }
 

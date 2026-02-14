@@ -387,3 +387,79 @@ test('loop treats markdown answers as final output instead of parse-error retry'
   assert.ok(responseEvent);
   assert.equal(responseEvent.content.text, '## Result\n\n- item 1\n- item 2');
 });
+
+test('loop restricts task step tool schemas to step tools plus task', async () => {
+  const bus = createEventBus();
+  const emitted = [];
+  const providerCalls = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  const provider = {
+    async chatCompletion(input) {
+      providerCalls.push(input);
+      return {
+        text: 'step done',
+        toolCalls: [],
+        finishReason: 'stop',
+        usage: {
+          promptTokens: 1,
+          completionTokens: 1,
+          totalTokens: 2,
+        },
+      };
+    },
+  };
+
+  const parser = {
+    parse(text) {
+      return { kind: 'final', text };
+    },
+  };
+
+  const loop = createAgentLoop({
+    bus,
+    provider,
+    parser,
+    toolRegistry: {
+      list() {
+        return [
+          { name: 'bash', description: 'run shell', schema: { type: 'object' } },
+          { name: 'read', description: 'read file', schema: { type: 'object' } },
+          { name: 'task', description: 'task control', schema: { type: 'object' } },
+        ];
+      },
+      validateCall() {
+        return { valid: true, errors: [] };
+      },
+      async execute() {
+        return {};
+      },
+    },
+    maxTokens: 128,
+  });
+
+  loop.start();
+  await bus.emit({
+    type: 'task:step:start',
+    channel: 'tui',
+    sessionId: 's-step',
+    content: {
+      step: {
+        id: 1,
+        total: 2,
+        instruction: 'do work',
+        tools: ['read'],
+      },
+    },
+  });
+
+  await waitFor(() => emitted.some((event) => event.type === 'task:step:complete'));
+  loop.stop();
+
+  assert.equal(providerCalls.length, 1);
+  const sentTools = providerCalls[0].tools.map((tool) => tool.name).sort();
+  assert.deepEqual(sentTools, ['read', 'task']);
+});

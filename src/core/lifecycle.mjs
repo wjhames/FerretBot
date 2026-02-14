@@ -8,6 +8,7 @@ import { createLmStudioProvider } from '../provider/lmstudio.mjs';
 import { createAgentParser } from '../agent/parser.mjs';
 import { createAgentLoop } from '../agent/loop.mjs';
 import { createToolRegistry } from '../tools/registry.mjs';
+import { createTaskManager } from '../tasks/manager.mjs';
 
 const DEFAULT_CONFIG_PATH = DEFAULT_AGENT_CONFIG_PATH;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -46,11 +47,20 @@ async function drainBusQueue(bus, { timeoutMs, pollMs }) {
   }
 }
 
-function defaultCreateToolRegistry(config = {}) {
+function defaultCreateToolRegistry({ config = {}, bus, taskManager } = {}) {
   return createToolRegistry({
     cwd: config.tools?.cwd,
     rootDir: config.tools?.rootDir,
     maxReadBytes: config.tools?.maxReadBytes,
+    bus,
+    taskManager,
+  });
+}
+
+function defaultCreateTaskManager({ bus, config = {} }) {
+  return createTaskManager({
+    bus,
+    storageDir: config.tasks?.storageDir,
   });
 }
 
@@ -72,6 +82,7 @@ export class AgentLifecycle {
   #createBus;
   #createProvider;
   #createParser;
+  #createTaskManager;
   #createToolRegistry;
   #createAgentLoop;
   #createIpcServer;
@@ -93,6 +104,7 @@ export class AgentLifecycle {
     this.#createBus = options.createBus ?? ((_) => createEventBus());
     this.#createProvider = options.createProvider ?? ((config) => createLmStudioProvider(config.provider));
     this.#createParser = options.createParser ?? (() => createAgentParser());
+    this.#createTaskManager = options.createTaskManager ?? defaultCreateTaskManager;
     this.#createToolRegistry = options.createToolRegistry ?? defaultCreateToolRegistry;
     this.#createAgentLoop = options.createAgentLoop ?? ((deps) => createAgentLoop(deps));
     this.#createIpcServer = options.createIpcServer ?? defaultCreateIpcServer;
@@ -115,7 +127,8 @@ export class AgentLifecycle {
     const bus = this.#createBus(config);
     const provider = this.#createProvider(config);
     const parser = this.#createParser(config);
-    const toolRegistry = this.#createToolRegistry(config);
+    const taskManager = this.#createTaskManager({ bus, config });
+    const toolRegistry = this.#createToolRegistry({ config, bus, taskManager });
 
     if (typeof toolRegistry.registerBuiltIns === 'function') {
       await toolRegistry.registerBuiltIns();
@@ -125,6 +138,7 @@ export class AgentLifecycle {
       bus,
       provider,
       parser,
+      taskManager,
       toolRegistry,
       maxTokens: config.agent?.maxTokens,
       maxToolCallsPerStep: config.agent?.maxToolCallsPerStep,
@@ -152,6 +166,7 @@ export class AgentLifecycle {
       bus,
       provider,
       parser,
+      taskManager,
       toolRegistry,
       agentLoop,
       ipcServer,
