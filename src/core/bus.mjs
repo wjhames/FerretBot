@@ -5,6 +5,10 @@ const DEFAULT_ALLOWED_EVENT_TYPES = [
   'task:created',
   'task:step:start',
   'task:step:complete',
+  'task:step:failed',
+  'task:step:skipped',
+  'task:note',
+  'task:failed',
   'task:complete',
   'agent:status',
 ];

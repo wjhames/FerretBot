@@ -18,8 +18,18 @@ const DEFAULT_TASK_STATE = {
   failed: 'failed',
 };
 
+const SUCCESS_STEP_STATES = new Set([DEFAULT_STEP_STATE.completed, DEFAULT_STEP_STATE.skipped]);
+
 function formatIsoNow() {
   return new Date().toISOString();
+}
+
+function normalizeText(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.trim();
 }
 
 function createTaskRecord(id, plan) {
@@ -36,7 +46,9 @@ function createTaskRecord(id, plan) {
       result: null,
       startedAt: null,
       completedAt: null,
+      notes: [],
     })),
+    notes: [],
   };
 }
 
@@ -80,6 +92,15 @@ export class TaskManager {
     if (startListening) {
       this.#bus.on('task:step:complete', (event) => {
         void this.#handleStepComplete(event);
+      });
+      this.#bus.on('task:step:failed', (event) => {
+        void this.#handleStepFailed(event);
+      });
+      this.#bus.on('task:step:skipped', (event) => {
+        void this.#handleStepSkipped(event);
+      });
+      this.#bus.on('task:note', (event) => {
+        void this.#handleNoteEvent(event);
       });
     }
   }
@@ -134,6 +155,22 @@ export class TaskManager {
       }));
   }
 
+  getActiveStepContext() {
+    const context = this.#getRunningContext();
+    if (!context) {
+      return null;
+    }
+
+    const { task, step } = context;
+    return {
+      taskId: task.id,
+      goal: task.goal,
+      stepId: step.id,
+      instruction: step.instruction,
+      totalSteps: task.steps.length,
+    };
+  }
+
   async #handleStepComplete(event) {
     if (this.#runningTaskId == null) {
       return;
@@ -159,6 +196,104 @@ export class TaskManager {
 
     this.#runningTaskId = null;
     await this.#tryScheduleNext();
+  }
+
+  #getRunningContext() {
+    if (!Number.isInteger(this.#runningTaskId)) {
+      return null;
+    }
+
+    const task = this.#tasks.get(this.#runningTaskId);
+    if (!task) {
+      return null;
+    }
+
+    const step = task.steps.find((entry) => entry.id === task.currentStepId);
+    if (!step) {
+      return null;
+    }
+
+    return { task, step };
+  }
+
+  async #handleStepFailed(event) {
+    const context = this.#getRunningContext();
+    if (!context) {
+      return;
+    }
+
+    const { task, step } = context;
+    const reason = normalizeText(event?.content?.reason ?? '');
+
+    step.state = DEFAULT_STEP_STATE.failed;
+    step.completedAt = formatIsoNow();
+    if (reason.length > 0) {
+      step.result = reason;
+    }
+
+    task.currentStepId = null;
+    task.state = DEFAULT_TASK_STATE.failed;
+    task.updatedAt = formatIsoNow();
+
+    await this.#persistTask(task);
+
+    this.#runningTaskId = null;
+    await this.#bus.emit({
+      type: 'task:failed',
+      content: {
+        taskId: task.id,
+        goal: task.goal,
+        stepId: step.id,
+        reason: reason || 'step failed',
+      },
+    });
+
+    await this.#tryScheduleNext();
+  }
+
+  async #handleStepSkipped(event) {
+    const context = this.#getRunningContext();
+    if (!context) {
+      return;
+    }
+
+    const { task, step } = context;
+    const note = normalizeText(event?.content?.reason ?? '');
+
+    step.state = DEFAULT_STEP_STATE.skipped;
+    step.completedAt = formatIsoNow();
+    if (note.length > 0) {
+      step.result = note;
+    }
+
+    task.currentStepId = null;
+    task.updatedAt = formatIsoNow();
+
+    await this.#persistTask(task);
+
+    this.#runningTaskId = null;
+    await this.#tryScheduleNext();
+  }
+
+  async #handleNoteEvent(event) {
+    const context = this.#getRunningContext();
+    if (!context) {
+      return;
+    }
+
+    const { task, step } = context;
+    const content = normalizeText(event?.content?.content ?? '');
+    if (!content) {
+      return;
+    }
+
+    step.notes.push({
+      content,
+      timestamp: formatIsoNow(),
+    });
+
+    task.updatedAt = formatIsoNow();
+    await this.#persistTask(task);
   }
 
   async #tryScheduleNext() {
@@ -215,7 +350,7 @@ export class TaskManager {
       const dependencies = ensureList(step.dependsOn);
       const allSatisfied = dependencies.every((depId) => {
         const preceding = task.steps.find((candidate) => candidate.id === depId);
-        return preceding && preceding.state === DEFAULT_STEP_STATE.completed;
+        return preceding && SUCCESS_STEP_STATES.has(preceding.state);
       });
 
       if (!allSatisfied) {
