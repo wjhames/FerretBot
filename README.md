@@ -1,16 +1,155 @@
 # FerretBot
 
-Local-first, event-driven AI agent system scaffold.
+Small, fast, and gets into everything.
 
-Initial scope:
-- Node.js ESM app
-- Event bus core
-- LM Studio provider integration
-- CLI/TUI + Telegram channels
-- Deterministic workflow engine, tools, skills, and memory modules
+## Current Scope
 
-Status:
-- Phase 1/1.5/2 core loop and IPC flow implemented.
-- Phase 3.5 deterministic workflow modules implemented (`workflows/*`).
-- Legacy compatibility adapters remain (`tasks/manager.mjs`, `tools/task.mjs`) for `task:*` step flows.
-- Workflow events are emitted and streamed to clients (`workflow:run:*`, `workflow:step:*`, `workflow:needs_approval`).
+Local-first, event-driven runtime focused on deterministic workflows.
+
+- Node.js ESM runtime
+- LM Studio provider (`/chat/completions`)
+- IPC daemon + terminal TUI client (NDJSON over Unix socket/TCP)
+- Deterministic workflow registry/engine (`workflow.yaml`)
+- Tool runtime (`bash`, `read`, `write`, legacy `task`)
+- Skill loader (global/workflow/step skill files)
+- Session/workspace memory modules
+
+## Requirements
+
+- Node.js `>= 20`
+- LM Studio running with OpenAI-compatible endpoint
+
+## Install
+
+```bash
+npm install
+```
+
+## Quick Start
+
+1. Start the agent daemon:
+
+```bash
+npm run agent
+```
+
+2. In another terminal, start the TUI client:
+
+```bash
+npm run tui
+```
+
+3. Chat in the TUI. The client sends `user:input` events over IPC.
+
+## Default Runtime Paths
+
+- Config: `~/.agent/config.json`
+- IPC socket: `~/.agent/agent.sock`
+- Workflow run records: `~/.agent/workflow-runs`
+
+## Config Example
+
+Create `~/.agent/config.json`:
+
+```json
+{
+  "provider": {
+    "baseUrl": "http://127.0.0.1:1234/v1",
+    "model": "openai/gpt-oss-20b",
+    "timeoutMs": 300000,
+    "temperature": 0,
+    "topP": 1
+  },
+  "ipc": {
+    "socketPath": "/home/YOUR_USER/.agent/agent.sock"
+  },
+  "agent": {
+    "maxTokens": 1024,
+    "maxToolCallsPerStep": 10
+  },
+  "tools": {
+    "cwd": "/home/YOUR_USER/projects/FerretBot",
+    "rootDir": "/home/YOUR_USER/projects/FerretBot",
+    "maxReadBytes": 131072
+  },
+  "workflows": {
+    "rootDir": "/home/YOUR_USER/projects/FerretBot/workflows",
+    "runsDir": "/home/YOUR_USER/.agent/workflow-runs"
+  },
+  "skills": {
+    "rootDir": "/home/YOUR_USER/projects/FerretBot",
+    "dirName": "skills"
+  },
+  "memory": {
+    "sessionsDir": "/home/YOUR_USER/.agent/sessions"
+  },
+  "workspace": {
+    "path": "/home/YOUR_USER/.agent/workspace",
+    "cleanupThresholdMs": 604800000
+  }
+}
+```
+
+Notes:
+- If `ipc.port` is set, IPC uses TCP (`host` + `port`) instead of Unix socket.
+- Defaults exist for most fields, but explicit paths are safer for local setups.
+
+## Workflow Layout
+
+Each workflow lives under `workflows/<workflow-id>/workflow.yaml`.
+
+Minimal example:
+
+```yaml
+id: demo-workflow
+version: "1.0.0"
+name: Demo Workflow
+description: Simple one-step workflow
+steps:
+  - id: summarize
+    instruction: Summarize the request in one paragraph.
+    tools: ["read", "write"]
+    dependsOn: []
+    loadSkills: []
+    retries: 0
+    approval: false
+```
+
+Validation rules include:
+- workflow `id` matches `^[a-z0-9-]+$`
+- `steps` non-empty
+- each step has `id`, `instruction`, non-empty `tools`
+- dependency references must exist; cycles rejected
+
+## Skills Layout
+
+- Global skills: `<root>/<skillsDir>/<skill-name>/SKILL.md`
+- Workflow skills: `<workflow-dir>/SKILL.md` or `*.skill.md`
+- Step skills: `<workflow-dir>/steps/*.skill.md`
+
+When `loadSkills` is set on a workflow step, precedence is:
+1. step skill
+2. workflow skill
+3. global skill
+
+## Core Events
+
+Outbound IPC events include:
+- `agent:response`
+- `agent:status`
+- `workflow:run:queued`
+- `workflow:step:start`
+- `workflow:step:complete`
+- `workflow:needs_approval`
+- `workflow:run:complete`
+- legacy `task:*` lifecycle events
+
+## Test
+
+```bash
+npm test
+```
+
+## Docs
+
+- Runtime notes: `docs/runtime.md`
