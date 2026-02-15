@@ -34,3 +34,23 @@ test('EventBus processes events serially and normalizes default metadata', async
   assert.equal(maxInFlight, 1);
   assert.equal(bus.getQueueDepth(), 0);
 });
+
+test('EventBus accepts workflow event types', async () => {
+  const bus = createEventBus();
+  const received = [];
+  bus.on('*', (event) => { received.push(event.type); });
+
+  const workflowEvents = [
+    'workflow:run:queued',
+    'workflow:step:start',
+    'workflow:step:complete',
+    'workflow:needs_approval',
+    'workflow:run:complete',
+  ];
+
+  for (const type of workflowEvents) {
+    await bus.emit({ type, content: {} });
+  }
+
+  assert.deepEqual(received, workflowEvents);
+});

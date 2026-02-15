@@ -11,6 +11,11 @@ const DEFAULT_ALLOWED_EVENT_TYPES = [
   'task:failed',
   'task:complete',
   'agent:status',
+  'workflow:run:queued',
+  'workflow:step:start',
+  'workflow:step:complete',
+  'workflow:needs_approval',
+  'workflow:run:complete',
 ];
 
 export class EventBus {
