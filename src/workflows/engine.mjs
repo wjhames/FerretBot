@@ -61,6 +61,19 @@ function resolvePathValue(objectValue, pathValue) {
   return String(current);
 }
 
+function extractName(text, patterns = []) {
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match && typeof match[1] === 'string') {
+      const value = match[1].trim();
+      if (value) {
+        return value.replace(/[.!,;:]+$/, '');
+      }
+    }
+  }
+  return '';
+}
+
 function createRunRecord(id, workflow, args) {
   return {
     id,
@@ -295,6 +308,22 @@ export class WorkflowEngine {
 
     const stepType = String(workflowStep?.type ?? 'agent');
     if (stepType === 'wait_for_input') {
+      const responseKey = workflowStep?.responseKey;
+      const existingValue = responseKey && run.args && typeof run.args === 'object'
+        ? String(run.args[responseKey] ?? '').trim()
+        : '';
+      if (existingValue) {
+        await this.#completeActiveStep({
+          run,
+          runStep: nextStep,
+          workflowStep,
+          result: existingValue,
+          toolResults: [],
+          emitStepCompleteEvent: false,
+        });
+        return;
+      }
+
       run.state = RUN_STATE.waitingInput;
       run.updatedAt = formatIsoNow();
       await this.#persistRun(run);
@@ -506,7 +535,9 @@ export class WorkflowEngine {
       return;
     }
 
-    run.args[workflowStep.responseKey] = inputText;
+    const normalizedValue = this.#normalizeInputForStep(workflowStep, inputText);
+    run.args[workflowStep.responseKey] = normalizedValue;
+    this.#extractBootstrapHintsIntoArgs(run.args, inputText);
     run.state = RUN_STATE.running;
     run.updatedAt = formatIsoNow();
     await this.#persistRun(run);
@@ -517,7 +548,7 @@ export class WorkflowEngine {
       run,
       runStep,
       workflowStep,
-      result: inputText,
+      result: normalizedValue,
       toolResults: [],
       emitStepCompleteEvent: false,
     });
@@ -549,6 +580,70 @@ export class WorkflowEngine {
     return source.replace(/\{\{\s*args\.([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, keyPath) => (
       resolvePathValue(run.args ?? {}, keyPath)
     ));
+  }
+
+  #normalizeInputForStep(workflowStep, inputText) {
+    const key = String(workflowStep?.responseKey ?? '');
+    if (!key.endsWith('_name')) {
+      return inputText;
+    }
+
+    const normalized = String(inputText ?? '').trim();
+    if (!normalized) {
+      return '';
+    }
+
+    if (key === 'user_name') {
+      return extractName(normalized, [
+        /\bmy name is\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+        /\bi am\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+        /\bi'm\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+        /\bcall me\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+      ]) || normalized;
+    }
+
+    if (key === 'assistant_name') {
+      return extractName(normalized, [
+        /\byou are\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+        /\byou're\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+        /\bcall yourself\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+        /\byour name is\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+      ]) || normalized;
+    }
+
+    return normalized;
+  }
+
+  #extractBootstrapHintsIntoArgs(args, inputText) {
+    if (!args || typeof args !== 'object') {
+      return;
+    }
+
+    const text = String(inputText ?? '').trim();
+    if (!text) {
+      return;
+    }
+
+    if (!String(args.user_name ?? '').trim()) {
+      const userName = extractName(text, [
+        /\bmy name is\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+        /\bi am\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+        /\bi'm\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+      ]);
+      if (userName) {
+        args.user_name = userName;
+      }
+    }
+
+    if (!String(args.assistant_name ?? '').trim()) {
+      const assistantName = extractName(text, [
+        /\byou are\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+        /\byou're\s+([A-Za-z][A-Za-z0-9'_ -]{0,40})/i,
+      ]);
+      if (assistantName) {
+        args.assistant_name = assistantName;
+      }
+    }
   }
 
   #findNextReadyStep(run) {

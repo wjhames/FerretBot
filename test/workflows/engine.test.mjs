@@ -514,3 +514,103 @@ test('wait_for_input steps pause run, capture user input, and continue', async (
     engine.stop();
   });
 });
+
+test('wait_for_input normalizes mixed name answers and can auto-skip prefilled follow-up', async () => {
+  await withTempDir(async (storageDir) => {
+    const workspaceDir = path.join(storageDir, 'workspace');
+    const workspaceManager = createWorkspaceManager({ baseDir: workspaceDir });
+    await workspaceManager.ensureWorkspace();
+
+    const bus = new FakeBus();
+    const wf = makeWorkflow({
+      id: 'mixed-name-wf',
+      steps: [
+        {
+          id: 'ask-user',
+          name: 'ask-user',
+          type: 'wait_for_input',
+          instruction: '',
+          prompt: 'Who are you?',
+          responseKey: 'user_name',
+          tools: [],
+          loadSkills: [],
+          dependsOn: [],
+          successChecks: [],
+          timeout: null,
+          retries: 0,
+          approval: false,
+          condition: null,
+          path: null,
+          content: null,
+          mode: null,
+        },
+        {
+          id: 'ask-assistant',
+          name: 'ask-assistant',
+          type: 'wait_for_input',
+          instruction: '',
+          prompt: 'Who am I?',
+          responseKey: 'assistant_name',
+          tools: [],
+          loadSkills: [],
+          dependsOn: ['ask-user'],
+          successChecks: [],
+          timeout: null,
+          retries: 0,
+          approval: false,
+          condition: null,
+          path: null,
+          content: null,
+          mode: null,
+        },
+        {
+          id: 'write-both',
+          name: 'write-both',
+          type: 'system_write_file',
+          instruction: '',
+          path: 'names.txt',
+          content: 'user={{args.user_name}} assistant={{args.assistant_name}}',
+          tools: [],
+          loadSkills: [],
+          dependsOn: ['ask-assistant'],
+          successChecks: [],
+          timeout: null,
+          retries: 0,
+          approval: false,
+          condition: null,
+          prompt: null,
+          responseKey: null,
+          mode: null,
+        },
+      ],
+    });
+
+    const registry = makeRegistry([wf]);
+    const engine = createWorkflowEngine({ bus, registry, storageDir, workspaceManager });
+    engine.start();
+
+    const run = await engine.startRun('mixed-name-wf');
+    assert.equal(run.state, 'waiting_input');
+
+    await bus.emit({
+      type: 'user:input',
+      channel: 'tui',
+      sessionId: 'mix-1',
+      content: { text: 'Hello' },
+    });
+
+    await bus.emit({
+      type: 'user:input',
+      channel: 'tui',
+      sessionId: 'mix-1',
+      content: { text: 'You are FerretBot. I am Jason.' },
+    });
+
+    await waitFor(() => run.state === 'completed');
+    assert.equal(run.args.user_name, 'Jason');
+    assert.equal(run.args.assistant_name, 'FerretBot');
+    assert.equal(await workspaceManager.readTextFile('names.txt'), 'user=Jason assistant=FerretBot');
+
+    engine.stop();
+  });
+});

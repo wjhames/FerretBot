@@ -360,6 +360,9 @@ export class TuiClient {
     }
 
     if (eventType.startsWith('workflow:')) {
+      if (eventType === 'workflow:needs_input') {
+        return;
+      }
       this.#appendMessage('system', `[${eventType}] ${toDisplayText(message.content)}`);
     }
   }
