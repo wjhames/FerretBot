@@ -9,6 +9,15 @@ async function ensureDir(directory) {
   await fs.mkdir(directory, { recursive: true });
 }
 
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function normalizeThreshold(value, fallback) {
   return Number.isFinite(value) ? Number(value) : fallback;
 }
@@ -101,6 +110,61 @@ export class WorkspaceManager {
     }));
 
     return removed;
+  }
+
+  async exists(...segments) {
+    await this.#ensureBase();
+    const targetPath = this.resolve(...segments);
+    return pathExists(targetPath);
+  }
+
+  async readTextFile(relativePath, options = {}) {
+    await this.#ensureBase();
+    const targetPath = this.resolve(relativePath);
+    const maxBytes = Number.isFinite(options.maxBytes) ? Number(options.maxBytes) : 0;
+
+    try {
+      const content = await fs.readFile(targetPath, 'utf-8');
+      if (maxBytes > 0) {
+        return content.slice(0, maxBytes);
+      }
+      return content;
+    } catch (error) {
+      if (error && error.code === 'ENOENT') {
+        return '';
+      }
+      throw error;
+    }
+  }
+
+  async writeTextFile(relativePath, content = '') {
+    await this.#ensureBase();
+    const targetPath = this.resolve(relativePath);
+    const parentDir = path.dirname(targetPath);
+    await ensureDir(parentDir);
+    await fs.writeFile(targetPath, String(content), 'utf-8');
+    return targetPath;
+  }
+
+  async ensureTextFile(relativePath, content = '') {
+    await this.#ensureBase();
+    const targetPath = this.resolve(relativePath);
+    const parentDir = path.dirname(targetPath);
+    await ensureDir(parentDir);
+
+    if (await pathExists(targetPath)) {
+      return { created: false, path: targetPath };
+    }
+
+    await fs.writeFile(targetPath, String(content), 'utf-8');
+    return { created: true, path: targetPath };
+  }
+
+  async removePath(relativePath) {
+    await this.#ensureBase();
+    const targetPath = this.resolve(relativePath);
+    await fs.rm(targetPath, { recursive: true, force: true });
+    return targetPath;
   }
 }
 

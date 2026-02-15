@@ -7,6 +7,7 @@ import { createIpcServer } from './ipc.mjs';
 import { createLmStudioProvider } from '../provider/lmstudio.mjs';
 import { createAgentParser } from '../agent/parser.mjs';
 import { createAgentLoop } from '../agent/loop.mjs';
+import { createWorkspaceBootstrapManager } from '../agent/bootstrap.mjs';
 import { createToolRegistry } from '../tools/registry.mjs';
 import { createWorkflowRegistry } from '../workflows/registry.mjs';
 import { createWorkflowEngine } from '../workflows/engine.mjs';
@@ -63,10 +64,10 @@ async function discoverProviderCapabilities(provider) {
   }
 }
 
-function defaultCreateToolRegistry({ config = {}, bus } = {}) {
+function defaultCreateToolRegistry({ config = {}, bus, workspaceManager } = {}) {
   return createToolRegistry({
-    cwd: config.tools?.cwd,
-    rootDir: config.tools?.rootDir,
+    cwd: config.tools?.cwd ?? workspaceManager?.baseDir,
+    rootDir: config.tools?.rootDir ?? workspaceManager?.baseDir,
     maxReadBytes: config.tools?.maxReadBytes,
     bus,
   });
@@ -101,6 +102,20 @@ function defaultCreateWorkspaceManager({ config = {} }) {
   });
 }
 
+function defaultCreateWorkspaceBootstrapManager({ workspaceManager } = {}) {
+  if (
+    !workspaceManager
+    || typeof workspaceManager.ensureTextFile !== 'function'
+    || typeof workspaceManager.readTextFile !== 'function'
+  ) {
+    return null;
+  }
+
+  return createWorkspaceBootstrapManager({
+    workspaceManager,
+  });
+}
+
 export class AgentLifecycle {
   #configPath;
   #shutdownTimeoutMs;
@@ -118,6 +133,7 @@ export class AgentLifecycle {
   #createSkillLoader;
   #createSessionMemory;
   #createWorkspaceManager;
+  #createWorkspaceBootstrapManager;
   #createScheduler;
   #persistState;
 
@@ -144,6 +160,7 @@ export class AgentLifecycle {
     this.#createSkillLoader = options.createSkillLoader ?? defaultCreateSkillLoader;
     this.#createSessionMemory = options.createSessionMemory ?? defaultCreateSessionMemory;
     this.#createWorkspaceManager = options.createWorkspaceManager ?? defaultCreateWorkspaceManager;
+    this.#createWorkspaceBootstrapManager = options.createWorkspaceBootstrapManager ?? defaultCreateWorkspaceBootstrapManager;
     this.#createScheduler = options.createScheduler ?? ((_) => createNoopScheduler());
     this.#persistState = options.persistState ?? (async () => {});
 
@@ -175,10 +192,18 @@ export class AgentLifecycle {
     if (workspaceManager && typeof workspaceManager.ensureWorkspace === 'function') {
       await workspaceManager.ensureWorkspace();
     }
+    const workspaceBootstrap = this.#createWorkspaceBootstrapManager({
+      config,
+      workspaceManager,
+    });
+    if (workspaceBootstrap && typeof workspaceBootstrap.ensureInitialized === 'function') {
+      await workspaceBootstrap.ensureInitialized();
+    }
 
     const toolRegistry = this.#createToolRegistry({
       config,
       bus,
+      workspaceManager,
     });
 
     if (typeof toolRegistry.registerBuiltIns === 'function') {
@@ -195,6 +220,7 @@ export class AgentLifecycle {
       skillLoader,
       sessionMemory,
       workspaceManager,
+      workspaceBootstrap,
       maxTokens: config.agent?.maxTokens,
       contextLimit: config.agent?.contextLimit ?? providerCapabilities?.contextWindow,
       outputReserve: config.agent?.outputReserve,
@@ -229,6 +255,7 @@ export class AgentLifecycle {
       skillLoader,
       sessionMemory,
       workspaceManager,
+      workspaceBootstrap,
       toolRegistry,
       agentLoop,
       ipcServer,

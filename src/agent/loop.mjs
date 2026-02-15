@@ -119,6 +119,7 @@ export class AgentLoop {
   #workflowEngine;
   #skillLoader;
   #sessionMemory;
+  #workspaceBootstrap;
   #maxTokens;
   #contextLimit;
   #maxToolCallsPerStep;
@@ -138,6 +139,7 @@ export class AgentLoop {
       workflowEngine = null,
       skillLoader = null,
       sessionMemory = null,
+      workspaceBootstrap = null,
       maxTokens,
       contextLimit = DEFAULT_CONTEXT_LIMIT,
       outputReserve,
@@ -198,6 +200,7 @@ export class AgentLoop {
     this.#workflowEngine = workflowEngine;
     this.#skillLoader = skillLoader;
     this.#sessionMemory = sessionMemory;
+    this.#workspaceBootstrap = workspaceBootstrap;
     this.#contextLimit = contextLimit;
     this.#maxTokens = Number.isInteger(maxTokens)
       ? maxTokens
@@ -420,11 +423,13 @@ export class AgentLoop {
     const conversationContext = await this.#loadConversationContext(event);
     const skillContent = await this.#loadSkillText(event);
     const priorSteps = this.#buildPriorSteps(event);
+    const promptContext = await this.#loadPromptContext();
 
     const builtContext = await Promise.resolve(this.#contextManager.buildMessages({
       event,
       mode: isStepEvent ? 'step' : 'interactive',
       userInput: coerceInputText(event),
+      extraRules: promptContext.extraRules,
       step: isStepEvent ? (event.content?.step ?? null) : null,
       conversation: conversationContext.turns,
       conversationSummary: conversationContext.summary,
@@ -439,6 +444,46 @@ export class AgentLoop {
         ? builtContext.maxOutputTokens
         : this.#maxTokens,
     };
+  }
+
+  async #loadPromptContext() {
+    if (!this.#workspaceBootstrap || typeof this.#workspaceBootstrap.loadPromptContext !== 'function') {
+      return { extraRules: '' };
+    }
+
+    try {
+      const loaded = await this.#workspaceBootstrap.loadPromptContext();
+      return {
+        extraRules: typeof loaded?.extraRules === 'string' ? loaded.extraRules : '',
+      };
+    } catch {
+      return { extraRules: '' };
+    }
+  }
+
+  async #maybeCompleteBootstrap(event) {
+    if (!this.#workspaceBootstrap || typeof this.#workspaceBootstrap.maybeCompleteBootstrap !== 'function') {
+      return;
+    }
+
+    try {
+      const completed = await this.#workspaceBootstrap.maybeCompleteBootstrap();
+      if (!completed) {
+        return;
+      }
+
+      this.#queueEmit({
+        type: 'agent:status',
+        channel: event.channel,
+        sessionId: event.sessionId,
+        content: {
+          phase: 'bootstrap:complete',
+          text: 'Bootstrap complete. BOOTSTRAP.md removed.',
+        },
+      });
+    } catch {
+      // Bootstrap completion is best-effort and must not block loop execution.
+    }
   }
 
   async #handleEvent(event) {
@@ -779,6 +824,7 @@ export class AgentLoop {
       arguments: parsedToolCall.arguments,
       event,
     });
+    await this.#maybeCompleteBootstrap(event);
     await this.#appendSessionTurn(event.sessionId, {
       role: 'assistant',
       type: 'tool_call',
