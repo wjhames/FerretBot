@@ -3,6 +3,31 @@ import path from 'node:path';
 
 import { resolveSafePath } from './read.mjs';
 
+function normalizeMode(mode) {
+  if (mode == null) {
+    return 'overwrite';
+  }
+
+  if (typeof mode !== 'string') {
+    throw new TypeError("mode must be either 'overwrite' or 'append'.");
+  }
+
+  const normalized = mode.trim().toLowerCase();
+  if (!normalized) {
+    return 'overwrite';
+  }
+
+  if (normalized === 'overwrite' || normalized === 'write' || normalized === 'replace' || normalized === 'truncate') {
+    return 'overwrite';
+  }
+
+  if (normalized === 'append' || normalized === 'add') {
+    return 'append';
+  }
+
+  throw new TypeError("mode must be either 'overwrite' or 'append'.");
+}
+
 export class WriteTool {
   #rootDir;
 
@@ -13,14 +38,11 @@ export class WriteTool {
   async execute(input = {}) {
     const { path: targetPath, content = '', mode = 'overwrite' } = input;
     const resolvedPath = resolveSafePath(this.#rootDir, targetPath);
+    const normalizedMode = normalizeMode(mode);
 
     const normalizedPath = targetPath.trim();
     if (normalizedPath === '.env' || normalizedPath.startsWith('.env.')) {
       throw new Error('Writing .env files is not allowed.');
-    }
-
-    if (mode !== 'overwrite' && mode !== 'append') {
-      throw new TypeError("mode must be either 'overwrite' or 'append'.");
     }
 
     if (typeof content !== 'string') {
@@ -29,7 +51,7 @@ export class WriteTool {
 
     await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
 
-    if (mode === 'append') {
+    if (normalizedMode === 'append') {
       await fs.appendFile(resolvedPath, content, 'utf8');
     } else {
       await fs.writeFile(resolvedPath, content, 'utf8');
@@ -41,7 +63,7 @@ export class WriteTool {
       path: path.relative(this.#rootDir, resolvedPath) || path.basename(resolvedPath),
       bytesWritten: Buffer.byteLength(content, 'utf8'),
       size: stats.size,
-      mode,
+      mode: normalizedMode,
     };
   }
 }

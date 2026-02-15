@@ -65,3 +65,37 @@ test('read/write tools reject root escape and .env writes', async () => {
     );
   });
 });
+
+test('write tool normalizes mode for common model output variants', async () => {
+  await withTempDir(async (rootDir) => {
+    const writeTool = createWriteTool({ rootDir });
+    const readTool = createReadTool({ rootDir });
+
+    await writeTool.execute({
+      path: 'notes/mode.txt',
+      content: 'A',
+      mode: ' overwrite ',
+    });
+
+    await writeTool.execute({
+      path: 'notes/mode.txt',
+      content: 'B',
+      mode: 'APPEND',
+    });
+
+    await writeTool.execute({
+      path: 'notes/mode.txt',
+      content: 'C',
+      mode: null,
+    });
+
+    await writeTool.execute({
+      path: 'notes/mode.txt',
+      content: 'D',
+      mode: 'add',
+    });
+
+    const read = await readTool.execute({ path: 'notes/mode.txt' });
+    assert.equal(read.content, 'CD');
+  });
+});
