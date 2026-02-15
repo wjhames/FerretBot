@@ -1,3 +1,8 @@
+/**
+ * @deprecated Compatibility adapter — will be removed after the workflow engine
+ * (src/workflows/engine.mjs) reaches full feature parity.
+ */
+
 const VALID_ACTIONS = new Set(['complete', 'fail', 'note', 'skip']);
 
 function normalizeText(value) {

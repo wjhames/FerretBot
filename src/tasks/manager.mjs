@@ -1,3 +1,8 @@
+/**
+ * @deprecated Compatibility adapter — will be removed after the workflow engine
+ * (src/workflows/engine.mjs) reaches full feature parity.
+ */
+
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
