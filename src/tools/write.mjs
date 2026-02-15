@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-import { resolveSafePath } from './read.mjs';
+import { normalizeRootDirs, resolveSafePath } from './read.mjs';
 
 function normalizeMode(mode) {
   if (mode == null) {
@@ -47,15 +47,17 @@ function normalizeMode(mode) {
 }
 
 export class WriteTool {
-  #rootDir;
+  #rootDirs;
 
   constructor(options = {}) {
-    this.#rootDir = options.rootDir ?? process.cwd();
+    this.#rootDirs = normalizeRootDirs(options);
   }
 
   async execute(input = {}) {
     const { path: targetPath, content = '', mode = 'overwrite' } = input;
-    const resolvedPath = resolveSafePath(this.#rootDir, targetPath);
+    const { resolvedPath, resolvedRoot } = await resolveSafePath(this.#rootDirs, targetPath, {
+      preferExisting: false,
+    });
     const normalizedMode = normalizeMode(mode);
 
     const normalizedPath = targetPath.trim();
@@ -78,7 +80,7 @@ export class WriteTool {
     const stats = await fs.stat(resolvedPath);
 
     return {
-      path: path.relative(this.#rootDir, resolvedPath) || path.basename(resolvedPath),
+      path: path.relative(resolvedRoot, resolvedPath) || path.basename(resolvedPath),
       bytesWritten: Buffer.byteLength(content, 'utf8'),
       size: stats.size,
       mode: normalizedMode,

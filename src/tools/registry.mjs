@@ -100,7 +100,11 @@ const BUILT_IN_TOOLS = [
       required: ['path'],
       additionalProperties: false,
     },
-    create: (options) => createReadTool({ rootDir: options.rootDir, maxBytes: options.maxReadBytes }),
+    create: (options) => createReadTool({
+      rootDir: options.rootDir,
+      rootDirs: options.rootDirs,
+      maxBytes: options.maxReadBytes,
+    }),
   },
   {
     name: 'write',
@@ -115,7 +119,7 @@ const BUILT_IN_TOOLS = [
       required: ['path'],
       additionalProperties: false,
     },
-    create: (options) => createWriteTool({ rootDir: options.rootDir }),
+    create: (options) => createWriteTool({ rootDir: options.rootDir, rootDirs: options.rootDirs }),
   },
 ];
 
@@ -128,6 +132,7 @@ export class ToolRegistry {
     this.#builtInOptions = {
       cwd: options.cwd ?? process.cwd(),
       rootDir: options.rootDir ?? process.cwd(),
+      rootDirs: options.rootDirs,
       maxReadBytes: options.maxReadBytes,
       bus: options.bus,
     };

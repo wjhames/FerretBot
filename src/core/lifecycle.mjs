@@ -65,9 +65,29 @@ async function discoverProviderCapabilities(provider) {
 }
 
 function defaultCreateToolRegistry({ config = {}, bus, workspaceManager } = {}) {
+  const configuredRootDirs = Array.isArray(config.tools?.rootDirs)
+    ? config.tools.rootDirs.filter((value) => typeof value === 'string' && value.trim().length > 0)
+    : [];
+  const workspaceRoot = workspaceManager?.baseDir;
+  const launchRoot = process.cwd();
+  const rootDirs = [...configuredRootDirs];
+
+  if (typeof config.tools?.rootDir === 'string' && config.tools.rootDir.trim().length > 0) {
+    rootDirs.push(config.tools.rootDir);
+  }
+
+  if (typeof launchRoot === 'string' && launchRoot.trim().length > 0) {
+    rootDirs.push(launchRoot);
+  }
+
+  if (typeof workspaceRoot === 'string' && workspaceRoot.trim().length > 0) {
+    rootDirs.push(workspaceRoot);
+  }
+
   return createToolRegistry({
     cwd: config.tools?.cwd ?? workspaceManager?.baseDir,
     rootDir: config.tools?.rootDir ?? workspaceManager?.baseDir,
+    rootDirs,
     maxReadBytes: config.tools?.maxReadBytes,
     bus,
   });

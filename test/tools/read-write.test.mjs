@@ -117,3 +117,35 @@ test('write tool normalizes mode for common model output variants', async () => 
     assert.equal(read.content, 'G');
   });
 });
+
+test('read/write tools support multiple allowed roots', async () => {
+  await withTempDir(async (baseDir) => {
+    const repoRoot = path.join(baseDir, 'repo');
+    const workspaceRoot = path.join(baseDir, 'workspace');
+    await fs.mkdir(repoRoot, { recursive: true });
+    await fs.mkdir(workspaceRoot, { recursive: true });
+
+    const writeTool = createWriteTool({ rootDirs: [repoRoot, workspaceRoot] });
+    const readTool = createReadTool({ rootDirs: [repoRoot, workspaceRoot] });
+
+    const writeRelative = await writeTool.execute({
+      path: 'notes/from-repo.txt',
+      content: 'repo-write',
+      mode: 'overwrite',
+    });
+    assert.equal(writeRelative.path, 'notes/from-repo.txt');
+
+    const workspaceFile = path.join(workspaceRoot, 'notes', 'from-workspace.txt');
+    await writeTool.execute({
+      path: workspaceFile,
+      content: 'workspace-write',
+      mode: 'overwrite',
+    });
+
+    const readWorkspaceRelative = await readTool.execute({ path: 'notes/from-workspace.txt' });
+    assert.equal(readWorkspaceRelative.content, 'workspace-write');
+
+    const readRepoRelative = await readTool.execute({ path: 'notes/from-repo.txt' });
+    assert.equal(readRepoRelative.content, 'repo-write');
+  });
+});

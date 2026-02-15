@@ -70,6 +70,10 @@ Create `~/.ferretbot/config.json`:
   "tools": {
     "cwd": "/home/YOUR_USER/projects/FerretBot",
     "rootDir": "/home/YOUR_USER/projects/FerretBot",
+    "rootDirs": [
+      "/home/YOUR_USER/projects/FerretBot",
+      "/home/YOUR_USER/.ferretbot/workspace"
+    ],
     "maxReadBytes": 131072
   },
   "workflows": {
@@ -93,6 +97,7 @@ Create `~/.ferretbot/config.json`:
 Notes:
 - If `ipc.port` is set, IPC uses TCP (`host` + `port`) instead of Unix socket.
 - Defaults exist for most fields, but explicit paths are safer for local setups.
+- `tools.rootDirs` is optional. If set, `read`/`write` can access all listed roots.
 
 ## Workflow Layout
 
