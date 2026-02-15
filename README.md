@@ -10,7 +10,7 @@ Local-first, event-driven runtime focused on deterministic workflows.
 - LM Studio provider (`/chat/completions`)
 - IPC daemon + terminal TUI client (NDJSON over Unix socket/TCP)
 - Deterministic workflow registry/engine (`workflow.yaml`)
-- Tool runtime (`bash`, `read`, `write`, legacy `task`)
+- Tool runtime (`bash`, `read`, `write`)
 - Skill loader (global/workflow/step skill files)
 - Session/workspace memory modules
 
@@ -142,7 +142,6 @@ Outbound IPC events include:
 - `workflow:step:complete`
 - `workflow:needs_approval`
 - `workflow:run:complete`
-- legacy `task:*` lifecycle events
 
 ## Test
 

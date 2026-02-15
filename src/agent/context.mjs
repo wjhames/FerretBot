@@ -5,7 +5,7 @@ export const DEFAULT_OUTPUT_RESERVE = 3_000;
 
 export const DEFAULT_LAYER_BUDGETS = Object.freeze({
   system: 800,
-  task: 4_000,
+  step: 4_000,
   skills: 3_000,
   prior: 2_000,
   conversation: 4_000,
@@ -13,13 +13,13 @@ export const DEFAULT_LAYER_BUDGETS = Object.freeze({
 
 const LAYER_NAME_ALIASES = Object.freeze({
   systemPrompt: 'system',
-  taskScope: 'task',
-  stepScope: 'task',
+  taskScope: 'step',
+  stepScope: 'step',
   skillContent: 'skills',
   priorContext: 'prior',
 });
 
-const FIXED_LAYER_NAMES = ['system', 'task', 'skills', 'prior'];
+const FIXED_LAYER_NAMES = ['system', 'step', 'skills', 'prior'];
 
 const DEFAULT_TOKEN_ESTIMATOR_CONFIG = Object.freeze({
   charsPerToken: 4,
@@ -239,7 +239,7 @@ function buildLayerText(options = {}) {
 
   return {
     system: systemText,
-    task: stepScopeParts.join('\n\n'),
+    step: stepScopeParts.join('\n\n'),
     skills: toText(skillContent).trim(),
     prior: priorParts.join('\n\n'),
   };
@@ -274,7 +274,7 @@ export class AgentContext {
     const inputBudget = this.#contextLimit - this.#outputReserve;
     const layers = buildLayerText(input);
 
-    const allocationOrder = ['system', 'task', 'skills', 'prior'];
+    const allocationOrder = ['system', 'step', 'skills', 'prior'];
     const rendered = {};
     const tokenUsage = {
       totalInputBudget: inputBudget,
@@ -312,8 +312,8 @@ export class AgentContext {
       messages.push({ role: 'system', content: rendered.system });
     }
 
-    if (rendered.task) {
-      messages.push({ role: 'system', content: rendered.task });
+    if (rendered.step) {
+      messages.push({ role: 'system', content: rendered.step });
     }
 
     if (rendered.skills) {

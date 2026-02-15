@@ -69,10 +69,6 @@ test('lifecycle start/shutdown follows expected orchestration order', async () =
     },
   };
 
-  const taskManager = {
-    marker: true,
-  };
-
   const lifecycle = createAgentLifecycle({
     signalSource,
     shutdownTimeoutMs: 200,
@@ -92,10 +88,6 @@ test('lifecycle start/shutdown follows expected orchestration order', async () =
     createParser: () => {
       recorder.push('parser.create');
       return { parse: () => ({ kind: 'final', text: '' }) };
-    },
-    createTaskManager: () => {
-      recorder.push('tasks.create');
-      return taskManager;
     },
     createWorkflowRegistry: () => {
       recorder.push('workflowRegistry.create');
@@ -156,7 +148,6 @@ test('lifecycle start/shutdown follows expected orchestration order', async () =
     'bus.create',
     'provider.create',
     'parser.create',
-    'tasks.create',
     'workflowRegistry.create',
     'workflowRegistry.loadAll',
     'workflowEngine.create',
@@ -199,7 +190,6 @@ test('lifecycle responds to SIGTERM and shuts down once', async () => {
     }),
     createProvider: () => ({ chatCompletion: async () => ({ text: '', usage: {}, finishReason: 'stop' }) }),
     createParser: () => ({ parse: () => ({ kind: 'final', text: '' }) }),
-    createTaskManager: () => ({ marker: true }),
     createWorkflowRegistry: () => ({ async loadAll() {}, get() { return null; } }),
     createWorkflowEngine: () => ({ start() {}, stop() { calls.push('workflowEngine.stop'); } }),
     createSkillLoader: () => ({}),
@@ -289,7 +279,8 @@ test('lifecycle default tool registry registers built-in tools', async () => {
   assert.equal(runtime.toolRegistry.has('bash'), true);
   assert.equal(runtime.toolRegistry.has('read'), true);
   assert.equal(runtime.toolRegistry.has('write'), true);
-  assert.equal(runtime.toolRegistry.has('task'), true);
+  const toolNames = runtime.toolRegistry.list().map((tool) => tool.name).sort();
+  assert.deepEqual(toolNames, ['bash', 'read', 'write']);
 
   await lifecycle.shutdown('test');
 });

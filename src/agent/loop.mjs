@@ -1,10 +1,8 @@
 import { DEFAULT_CONTEXT_LIMIT, createAgentContext } from './context.mjs';
 import { buildSystemPrompt } from './prompt.mjs';
 
-const LEGACY_TASK_STEP_START_EVENT = 'task:step:start';
 const WORKFLOW_STEP_START_EVENT = 'workflow:step:start';
 const STEP_START_EVENTS = new Set([
-  LEGACY_TASK_STEP_START_EVENT,
   WORKFLOW_STEP_START_EVENT,
 ]);
 
@@ -89,10 +87,6 @@ function getToolDefinitionsForEvent(toolRegistry, event) {
       (name) => typeof name === 'string' && name.trim().length > 0,
     ),
   );
-
-  if (event.type === LEGACY_TASK_STEP_START_EVENT) {
-    allowed.add('task');
-  }
 
   return allTools.filter((tool) => allowed.has(tool.name));
 }
@@ -565,17 +559,6 @@ export class AgentLoop {
         usage: completion.usage,
       },
     });
-
-    if (event.type === LEGACY_TASK_STEP_START_EVENT) {
-      this.#queueEmit({
-        type: 'task:step:complete',
-        channel: event.channel,
-        sessionId: event.sessionId,
-        content: {
-          result: finalText,
-        },
-      });
-    }
 
     if (event.type === WORKFLOW_STEP_START_EVENT) {
       this.#queueEmit({

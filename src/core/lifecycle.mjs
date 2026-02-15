@@ -8,7 +8,6 @@ import { createLmStudioProvider } from '../provider/lmstudio.mjs';
 import { createAgentParser } from '../agent/parser.mjs';
 import { createAgentLoop } from '../agent/loop.mjs';
 import { createToolRegistry } from '../tools/registry.mjs';
-import { createTaskManager as createLegacyTaskManager } from '../tasks/manager.mjs';
 import { createWorkflowRegistry } from '../workflows/registry.mjs';
 import { createWorkflowEngine } from '../workflows/engine.mjs';
 import { createSkillLoader } from '../skills/loader.mjs';
@@ -52,25 +51,12 @@ async function drainBusQueue(bus, { timeoutMs, pollMs }) {
   }
 }
 
-function resolveLegacyTaskStorageDir(config = {}) {
-  return config.workflows?.legacyTasks?.storageDir ?? config.tasks?.storageDir;
-}
-
-function defaultCreateToolRegistry({ config = {}, bus, legacyTaskManager } = {}) {
+function defaultCreateToolRegistry({ config = {}, bus } = {}) {
   return createToolRegistry({
     cwd: config.tools?.cwd,
     rootDir: config.tools?.rootDir,
     maxReadBytes: config.tools?.maxReadBytes,
     bus,
-    taskManager: legacyTaskManager,
-    legacyTaskManager,
-  });
-}
-
-function defaultCreateLegacyTaskManager({ bus, config = {} }) {
-  return createLegacyTaskManager({
-    bus,
-    storageDir: resolveLegacyTaskStorageDir(config),
   });
 }
 
@@ -112,7 +98,6 @@ export class AgentLifecycle {
   #createBus;
   #createProvider;
   #createParser;
-  #createLegacyTaskManager;
   #createToolRegistry;
   #createAgentLoop;
   #createIpcServer;
@@ -139,7 +124,6 @@ export class AgentLifecycle {
     this.#createBus = options.createBus ?? ((_) => createEventBus());
     this.#createProvider = options.createProvider ?? ((config) => createLmStudioProvider(config.provider));
     this.#createParser = options.createParser ?? (() => createAgentParser());
-    this.#createLegacyTaskManager = options.createTaskManager ?? options.createLegacyTaskManager ?? defaultCreateLegacyTaskManager;
     this.#createToolRegistry = options.createToolRegistry ?? defaultCreateToolRegistry;
     this.#createAgentLoop = options.createAgentLoop ?? ((deps) => createAgentLoop(deps));
     this.#createIpcServer = options.createIpcServer ?? defaultCreateIpcServer;
@@ -167,7 +151,6 @@ export class AgentLifecycle {
     const bus = this.#createBus(config);
     const provider = this.#createProvider(config);
     const parser = this.#createParser(config);
-    const legacyTaskManager = this.#createLegacyTaskManager({ bus, config });
 
     const workflowRegistry = this.#createWorkflowRegistry({ config });
     await workflowRegistry.loadAll();
@@ -183,8 +166,6 @@ export class AgentLifecycle {
     const toolRegistry = this.#createToolRegistry({
       config,
       bus,
-      taskManager: legacyTaskManager,
-      legacyTaskManager,
     });
 
     if (typeof toolRegistry.registerBuiltIns === 'function') {
@@ -195,7 +176,6 @@ export class AgentLifecycle {
       bus,
       provider,
       parser,
-      taskManager: legacyTaskManager,
       toolRegistry,
       workflowRegistry,
       workflowEngine,
@@ -228,8 +208,6 @@ export class AgentLifecycle {
       bus,
       provider,
       parser,
-      legacyTaskManager,
-      taskManager: legacyTaskManager,
       workflowRegistry,
       workflowEngine,
       skillLoader,

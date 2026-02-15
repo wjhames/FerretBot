@@ -44,7 +44,7 @@ The agent is headless and can run with zero clients connected.
 - Context budgeting:
   Layer budget aliases (`systemPrompt`, `taskScope`, `skillContent`, `priorContext`) are normalized to runtime layer names and fixed layers are scaled to fit the current input budget.
 
-## Phase 3.5 Workflow Runtime Wiring
+## Workflow Runtime Wiring
 
 - Workflow engine:
   The lifecycle loads workflow definitions, starts the workflow registry/engine, and emits deterministic workflow step events.
@@ -52,8 +52,5 @@ The agent is headless and can run with zero clients connected.
 - Workflow step execution:
   During `workflow:step:start`, the loop sends only step-assigned tools to the model and auto-emits `workflow:step:complete` on final text responses.
 
-- Legacy compatibility adapters:
-  The built-in `task` tool is still registered when lifecycle provides the legacy task manager. During `task:step:start`, the loop exposes step-assigned tools plus `task`.
-
 - Event routing:
-  IPC forwards both legacy task events and workflow events so connected clients can observe run lifecycle and step progression.
+  IPC forwards workflow events so connected clients can observe run lifecycle and step progression.

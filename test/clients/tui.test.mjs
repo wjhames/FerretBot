@@ -119,7 +119,7 @@ test('tui client appends inbound messages and sends user input through ipc', asy
   rendererProps.onSubmit('hello agent');
 
   onMessage({ type: 'agent:response', content: { text: 'hello human' } });
-  onMessage({ type: 'task:created', content: { id: 1 } });
+  onMessage({ type: 'workflow:run:queued', content: { runId: 1, workflowId: 'demo' } });
 
   const state = client.getState();
   assert.equal(state.clientId, 'client-9');
@@ -128,6 +128,7 @@ test('tui client appends inbound messages and sends user input through ipc', asy
   assert.equal(state.messages[1].role, 'assistant');
   assert.equal(state.messages[1].text, 'hello human');
   assert.equal(state.messages[2].role, 'system');
+  assert.match(state.messages[2].text, /\[workflow:run:queued\]/);
   assert.equal(sent[0], 'hello agent');
 
   client.stop();

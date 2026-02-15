@@ -15,7 +15,7 @@ test('context build enforces input budget and assembles deterministic layers', (
     outputReserve: 120,
     layerBudgets: {
       system: 280,
-      task: 120,
+      step: 120,
       skills: 80,
       prior: 80,
       conversation: 120,
@@ -93,7 +93,7 @@ test('layer budgets accept alias names and preserve configured values', () => {
 
   const budgets = context.getLayerBudgets();
   assert.equal(budgets.system, 700);
-  assert.equal(budgets.task, 1_100);
+  assert.equal(budgets.step, 1_100);
   assert.equal(budgets.skills, 400);
   assert.equal(budgets.prior, 200);
   assert.equal(budgets.conversation, 800);
@@ -105,17 +105,17 @@ test('layer budgets scale when fixed layers exceed the input budget', () => {
     outputReserve: 200,
     layerBudgets: {
       system: 400,
-      task: 400,
+      step: 400,
       skills: 400,
       prior: 400,
     },
   });
 
   const budgets = context.getLayerBudgets();
-  const totalFixed = budgets.system + budgets.task + budgets.skills + budgets.prior;
+  const totalFixed = budgets.system + budgets.step + budgets.skills + budgets.prior;
   assert.equal(totalFixed, 1_000);
   assert.ok(budgets.system <= 400);
-  assert.ok(budgets.task <= 400);
+  assert.ok(budgets.step <= 400);
   assert.ok(budgets.skills <= 400);
   assert.ok(budgets.prior <= 400);
 });
