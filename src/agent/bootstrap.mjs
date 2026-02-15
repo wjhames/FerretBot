@@ -215,13 +215,28 @@ name: Workspace Bootstrap
 steps:
   - id: ask-user-name
     type: wait_for_input
-    prompt: "What name should I use for you?"
+    prompt: "Hey, I just came online. Who am I? Who are you? First, what should I call you?"
     responseKey: user_name
   - id: ask-assistant-name
     type: wait_for_input
-    prompt: "What should I call myself in this workspace?"
+    prompt: "What should I call myself?"
     responseKey: assistant_name
     dependsOn: [ask-user-name]
+  - id: ask-nature
+    type: wait_for_input
+    prompt: "What kind of creature should I be? AI assistant is fine, or something weirder."
+    responseKey: assistant_nature
+    dependsOn: [ask-assistant-name]
+  - id: ask-vibe
+    type: wait_for_input
+    prompt: "What vibe should I have? Formal, casual, snarky, warm, or something else."
+    responseKey: assistant_vibe
+    dependsOn: [ask-nature]
+  - id: ask-emoji
+    type: wait_for_input
+    prompt: "Pick a signature emoji for me."
+    responseKey: assistant_emoji
+    dependsOn: [ask-vibe]
   - id: write-user
     type: system_write_file
     path: USER.md
@@ -253,7 +268,7 @@ steps:
 
       ## Unknowns
       - Pending clarifications:
-    dependsOn: [ask-user-name]
+    dependsOn: [ask-emoji]
   - id: write-identity
     type: system_write_file
     path: IDENTITY.md
@@ -262,6 +277,15 @@ steps:
 
       ## Name
       {{args.assistant_name}}
+
+      ## Nature
+      {{args.assistant_nature}}
+
+      ## Vibe
+      {{args.assistant_vibe}}
+
+      ## Emoji
+      {{args.assistant_emoji}}
 
       ## Purpose
       Local-first coding partner for this workspace.
@@ -274,7 +298,7 @@ steps:
 
       ## Boundaries
       No fabricated tool results. No unsafe destructive actions.
-    dependsOn: [ask-assistant-name]
+    dependsOn: [ask-emoji]
   - id: mark-complete
     type: system_write_file
     path: ${DEFAULT_PROMPT_FILES.bootstrapMarker}
@@ -432,10 +456,13 @@ export class WorkspaceBootstrapManager {
     }
 
     if (!workflowExists) {
-      await this.#workspaceManager.ensureTextFile(
-        this.#fileNames.bootstrapWorkflowFile,
-        TEMPLATE_BOOTSTRAP_WORKFLOW,
-      );
+      await this.#workspaceManager.ensureTextFile(this.#fileNames.bootstrapWorkflowFile, TEMPLATE_BOOTSTRAP_WORKFLOW);
+      return;
+    }
+
+    const current = await this.#workspaceManager.readTextFile(this.#fileNames.bootstrapWorkflowFile);
+    if (normalizeText(current) !== normalizeText(TEMPLATE_BOOTSTRAP_WORKFLOW)) {
+      await this.#workspaceManager.writeTextFile(this.#fileNames.bootstrapWorkflowFile, TEMPLATE_BOOTSTRAP_WORKFLOW);
     }
   }
 

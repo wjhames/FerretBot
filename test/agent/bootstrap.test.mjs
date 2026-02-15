@@ -51,6 +51,10 @@ test('workspace bootstrap manager seeds prompt files and bootstrap workflow', as
     const bootstrapWorkflow = await workspaceManager.readTextFile('workflows/bootstrap-init/workflow.yaml');
     assert.match(bootstrapWorkflow, /type: wait_for_input/);
     assert.match(bootstrapWorkflow, /responseKey: user_name/);
+    assert.match(bootstrapWorkflow, /responseKey: assistant_nature/);
+    assert.match(bootstrapWorkflow, /responseKey: assistant_vibe/);
+    assert.match(bootstrapWorkflow, /responseKey: assistant_emoji/);
+    assert.match(bootstrapWorkflow, /Hey, I just came online/);
 
     const descriptor = bootstrap.getBootstrapWorkflowDescriptor();
     assert.equal(descriptor.id, 'bootstrap-init');

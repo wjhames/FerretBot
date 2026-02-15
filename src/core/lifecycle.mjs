@@ -264,7 +264,7 @@ export class AgentLifecycle {
         const workflowDescriptor = workspaceBootstrap.getBootstrapWorkflowDescriptor();
         const existingRun = workflowEngine.listRuns().find((run) =>
           run.workflowId === workflowDescriptor.id
-          && (run.state === 'queued' || run.state === 'running' || run.state === 'waiting_approval'),
+          && (run.state === 'queued' || run.state === 'running' || run.state === 'waiting_approval' || run.state === 'waiting_input'),
         );
 
         if (!existingRun && workflowRegistry.get(workflowDescriptor.id, workflowDescriptor.version)) {
