@@ -196,6 +196,71 @@ test('loop emits tool-limit response when call cap is exceeded', async () => {
   assert.match(responseEvent.content.text, /Tool call limit reached/);
 });
 
+test('loop continues generation when model hits token limit', async () => {
+  const bus = createEventBus();
+  const emitted = [];
+  const calls = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  let index = 0;
+  const provider = {
+    async chatCompletion(input) {
+      calls.push(input);
+      const responses = [
+        { text: 'Part one. ', finishReason: 'length' },
+        { text: 'Part two.', finishReason: 'stop' },
+      ];
+      const item = responses[index] ?? responses[responses.length - 1];
+      index += 1;
+      return {
+        text: item.text,
+        toolCalls: [],
+        finishReason: item.finishReason,
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      };
+    },
+  };
+
+  const parser = {
+    parse(text) {
+      return { kind: 'final', text };
+    },
+  };
+
+  const loop = createAgentLoop({
+    bus,
+    provider,
+    parser,
+    maxTokens: 64,
+    maxContinuations: 2,
+  });
+
+  loop.start();
+
+  await bus.emit({
+    type: 'user:input',
+    channel: 'tui',
+    sessionId: 'continue-1',
+    content: { text: 'Write a long response' },
+  });
+
+  await waitFor(() => emitted.some((event) => event.type === 'agent:response'));
+  loop.stop();
+
+  assert.equal(calls.length, 2);
+  const responseEvent = emitted.find((event) => event.type === 'agent:response');
+  assert.ok(responseEvent);
+  assert.equal(responseEvent.content.text, 'Part one. Part two.');
+
+  const continuationStatus = emitted.find(
+    (event) => event.type === 'agent:status' && event.content.phase === 'generation:continue',
+  );
+  assert.ok(continuationStatus);
+});
+
 test('loop retries on parse/validation errors and then succeeds', async () => {
   const bus = createEventBus();
   const emitted = [];

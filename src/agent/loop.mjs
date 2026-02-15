@@ -17,6 +17,7 @@ const DEFAULT_PROCESSABLE_EVENTS = new Set([
 ]);
 
 const DEFAULT_RETRY_LIMIT = 2;
+const DEFAULT_MAX_CONTINUATIONS = 3;
 const EMPTY_RESPONSE_TEXT = 'Model returned an empty response.';
 
 function coerceInputText(event) {
@@ -71,6 +72,14 @@ function buildCorrectionPrompt(reason) {
   ].join('\n');
 }
 
+function buildContinuationPrompt() {
+  return [
+    'Continue exactly from where your previous response stopped.',
+    'Do not repeat earlier text.',
+    'Do not add preamble or explanation.',
+  ].join('\n');
+}
+
 function getToolDefinitions(toolRegistry) {
   if (!toolRegistry || typeof toolRegistry.list !== 'function') {
     return [];
@@ -113,6 +122,7 @@ export class AgentLoop {
   #maxTokens;
   #contextLimit;
   #maxToolCallsPerStep;
+  #maxContinuations;
   #retryLimit;
   #unsubscribe;
   #pendingEmits;
@@ -133,6 +143,7 @@ export class AgentLoop {
       outputReserve,
       layerBudgets,
       maxToolCallsPerStep = 10,
+      maxContinuations = DEFAULT_MAX_CONTINUATIONS,
       retryLimit = DEFAULT_RETRY_LIMIT,
       buildMessages,
     } = options;
@@ -171,6 +182,10 @@ export class AgentLoop {
       throw new TypeError('maxToolCallsPerStep must be a positive integer.');
     }
 
+    if (!Number.isInteger(maxContinuations) || maxContinuations < 0) {
+      throw new TypeError('maxContinuations must be a non-negative integer.');
+    }
+
     if (!Number.isInteger(retryLimit) || retryLimit < 0) {
       throw new TypeError('retryLimit must be a non-negative integer.');
     }
@@ -188,6 +203,7 @@ export class AgentLoop {
       ? maxTokens
       : (Number.isInteger(outputReserve) ? outputReserve : deriveOutputReserve(contextLimit));
     this.#maxToolCallsPerStep = maxToolCallsPerStep;
+    this.#maxContinuations = maxContinuations;
     this.#retryLimit = retryLimit;
     this.#unsubscribe = null;
     this.#pendingEmits = new Set();
@@ -428,6 +444,8 @@ export class AgentLoop {
 
     let toolCalls = 0;
     let correctionRetries = 0;
+    let continuationCount = 0;
+    const accumulatedTextParts = [];
 
     while (true) {
       const completion = await this.#provider.chatCompletion({
@@ -470,7 +488,34 @@ export class AgentLoop {
       const parsed = this.#parseCompletion(completion);
 
       if (parsed.kind === 'emit_final') {
-        await this.#emitFinal(event, completion, parsed.text);
+        if (
+          this.#shouldContinueCompletion(completion, continuationCount)
+        ) {
+          continuationCount += 1;
+          const textPart = typeof parsed.text === 'string' ? parsed.text : '';
+          if (textPart.length > 0) {
+            accumulatedTextParts.push(textPart);
+          }
+
+          messages.push({
+            role: 'assistant',
+            content: typeof completion.text === 'string' ? completion.text : '',
+          });
+          messages.push({ role: 'user', content: buildContinuationPrompt() });
+          this.#queueEmit({
+            type: 'agent:status',
+            channel: event.channel,
+            sessionId: event.sessionId,
+            content: {
+              phase: 'generation:continue',
+              text: `Continuing truncated response (${continuationCount}/${this.#maxContinuations}).`,
+            },
+          });
+          continue;
+        }
+
+        const fullText = `${accumulatedTextParts.join('')}${typeof parsed.text === 'string' ? parsed.text : ''}`;
+        await this.#emitFinal(event, completion, fullText);
         return;
       }
 
@@ -512,6 +557,15 @@ export class AgentLoop {
         return;
       }
     }
+  }
+
+  #shouldContinueCompletion(completion, continuationCount) {
+    if (continuationCount >= this.#maxContinuations) {
+      return false;
+    }
+
+    const reason = String(completion?.finishReason ?? '').toLowerCase();
+    return reason === 'length' || reason === 'max_tokens';
   }
 
   #parseCompletion(completion) {
