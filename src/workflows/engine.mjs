@@ -133,9 +133,6 @@ export class WorkflowEngine {
     );
     this.#unsubscribes.push(
       this.#bus.on('user:input', (event) => {
-        if (this.#shouldConsumeUserInput(event)) {
-          event.__workflowConsumed = true;
-        }
         void this.#handleUserInput(event);
       }),
     );
@@ -530,6 +527,35 @@ export class WorkflowEngine {
     }
 
     if (boundSessionId && incomingSessionId && boundSessionId !== incomingSessionId) {
+      if (run.workflowId !== 'bootstrap-init') {
+        return;
+      }
+
+      run.args.sessionId = incomingSessionId;
+      run.updatedAt = formatIsoNow();
+      await this.#persistRun(run);
+
+      event.__workflowConsumed = true;
+
+      const prompt = String(workflowStep?.prompt ?? '').trim();
+      await this.#bus.emit({
+        type: 'workflow:needs_input',
+        sessionId: incomingSessionId,
+        content: {
+          runId: run.id,
+          stepId: workflowStep.id,
+          prompt,
+          responseKey: workflowStep.responseKey,
+        },
+      });
+      await this.#bus.emit({
+        type: 'agent:response',
+        sessionId: incomingSessionId,
+        content: {
+          text: prompt,
+          finishReason: 'workflow_input',
+        },
+      });
       return;
     }
 
@@ -576,27 +602,6 @@ export class WorkflowEngine {
     }
 
     return candidates[0];
-  }
-
-  #shouldConsumeUserInput(event) {
-    const sessionId = event?.sessionId ?? null;
-    const run = this.#findRunWaitingForInput(sessionId);
-    if (!run) {
-      return false;
-    }
-
-    const workflow = this.#registry.get(run.workflowId, run.workflowVersion);
-    if (!workflow) {
-      return false;
-    }
-
-    const activeStep = run.steps.find((step) => step.state === STEP_STATE.active);
-    if (!activeStep) {
-      return false;
-    }
-
-    const workflowStep = workflow.steps.find((step) => step.id === activeStep.id);
-    return String(workflowStep?.type ?? '') === 'wait_for_input';
   }
 
   #renderTemplate(text, run) {
