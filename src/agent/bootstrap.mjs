@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-const TEMPLATE_VERSION = 'openclaw-2026-02-15-v1';
+const TEMPLATE_VERSION = 'ferretbot-2026-02-15-v1';
 
 const DEFAULT_PROMPT_FILES = Object.freeze({
   agents: 'AGENTS.md',
