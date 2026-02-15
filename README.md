@@ -43,13 +43,13 @@ npm run tui
 
 ## Default Runtime Paths
 
-- Config: `~/.agent/config.json`
-- IPC socket: `~/.agent/agent.sock`
-- Workflow run records: `~/.agent/workflow-runs`
+- Config: `~/.ferretbot/config.json`
+- IPC socket: `~/.ferretbot/agent.sock`
+- Workflow run records: `~/.ferretbot/workflow-runs`
 
 ## Config Example
 
-Create `~/.agent/config.json`:
+Create `~/.ferretbot/config.json`:
 
 ```json
 {
@@ -61,7 +61,7 @@ Create `~/.agent/config.json`:
     "topP": 1
   },
   "ipc": {
-    "socketPath": "/home/YOUR_USER/.agent/agent.sock"
+    "socketPath": "/home/YOUR_USER/.ferretbot/agent.sock"
   },
   "agent": {
     "maxTokens": 1024,
@@ -74,17 +74,17 @@ Create `~/.agent/config.json`:
   },
   "workflows": {
     "rootDir": "/home/YOUR_USER/projects/FerretBot/workflows",
-    "runsDir": "/home/YOUR_USER/.agent/workflow-runs"
+    "runsDir": "/home/YOUR_USER/.ferretbot/workflow-runs"
   },
   "skills": {
     "rootDir": "/home/YOUR_USER/projects/FerretBot",
     "dirName": "skills"
   },
   "memory": {
-    "sessionsDir": "/home/YOUR_USER/.agent/sessions"
+    "sessionsDir": "/home/YOUR_USER/.ferretbot/sessions"
   },
   "workspace": {
-    "path": "/home/YOUR_USER/.agent/workspace",
+    "path": "/home/YOUR_USER/.ferretbot/workspace",
     "cleanupThresholdMs": 604800000
   }
 }

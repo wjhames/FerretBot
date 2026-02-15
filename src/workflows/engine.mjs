@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { evaluateChecks } from './checks.mjs';
 
-const DEFAULT_RUNS_DIR = path.join(os.homedir(), '.agent', 'workflow-runs');
+const DEFAULT_RUNS_DIR = path.join(os.homedir(), '.ferretbot', 'workflow-runs');
 
 const RUN_STATE = {
   queued: 'queued',

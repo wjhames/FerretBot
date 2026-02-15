@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 
-const DEFAULT_SESSION_FOLDER = path.resolve(os.homedir(), '.agent', 'sessions');
+const DEFAULT_SESSION_FOLDER = path.resolve(os.homedir(), '.ferretbot', 'sessions');
 const DEFAULT_TOKEN_ESTIMATOR = Object.freeze({
   charsPerToken: 4,
   safetyMargin: 1.1,
