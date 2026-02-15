@@ -28,7 +28,6 @@ test('context build enforces input budget and assembles deterministic layers', (
   }));
 
   const result = context.buildMessages({
-    mode: 'planning',
     step: { id: 2, total: 5, instruction: 'Implement IPC server' },
     tools: [
       { name: 'bash', description: 'run shell', schema: { type: 'object', properties: { command: { type: 'string' } } } },
@@ -56,7 +55,6 @@ test('context build enforces input budget and assembles deterministic layers', (
     .join('\n');
 
   assert.match(systemJoined, /Tool call format:/);
-  assert.match(systemJoined, /Planning mode/);
   assert.match(systemJoined, /Step 1: Bootstrap project/);
 });
 

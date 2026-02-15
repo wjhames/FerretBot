@@ -205,7 +205,6 @@ function takeConversationTurns(turns = [], tokenBudget, tokenEstimatorConfig) {
 
 function buildLayerText(options = {}) {
   const {
-    mode = 'interactive',
     step,
     extraRules = '',
     tools = [],
@@ -214,7 +213,6 @@ function buildLayerText(options = {}) {
   } = options;
 
   const systemText = buildSystemPrompt({
-    mode: mode === 'planning' ? 'planning' : undefined,
     step,
     extraRules,
   });

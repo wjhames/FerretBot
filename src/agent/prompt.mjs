@@ -29,18 +29,6 @@ export function toolCallFormat() {
   ].join('\n');
 }
 
-export function planningInstructions() {
-  return [
-    'Planning mode: produce an executable plan as JSON.',
-    'Return keys: goal, steps.',
-    'Each step must include: id, instruction, tools, skill, dependsOn.',
-    'Use integer step ids starting at 1.',
-    'dependsOn must reference prior step ids only.',
-    'Keep steps concrete, ordered, and minimal.',
-    'Only include tools that are necessary for the step.',
-  ].join('\n');
-}
-
 export function stepPreamble(step) {
   const id = Number.isInteger(step?.id) ? step.id : '?';
   const total = Number.isInteger(step?.total) ? step.total : '?';
@@ -55,10 +43,6 @@ export function stepPreamble(step) {
 
 export function buildSystemPrompt(options = {}) {
   const sections = [coreIdentity(), toolCallFormat()];
-
-  if (options.mode === 'planning') {
-    sections.push(planningInstructions());
-  }
 
   if (options.step) {
     sections.push(stepPreamble(options.step));
