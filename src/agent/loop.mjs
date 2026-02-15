@@ -19,9 +19,6 @@ const DEFAULT_PROCESSABLE_EVENTS = new Set([
 const DEFAULT_RETRY_LIMIT = 2;
 const DEFAULT_MAX_CONTINUATIONS = 3;
 const EMPTY_RESPONSE_TEXT = 'Model returned an empty response.';
-const COMPACTION_SUMMARY_LIMIT = 6;
-const COMPACTION_SUMMARY_SNIPPET_LENGTH = 80;
-const CONTINUATION_COMPACTION_BUFFER = 32;
 
 function coerceInputText(event) {
   const { content } = event;
@@ -110,44 +107,6 @@ function getToolDefinitionsForEvent(toolRegistry, event) {
 function normalizeFinalText(text) {
   const normalized = typeof text === 'string' ? text.trim() : '';
   return normalized.length > 0 ? normalized : EMPTY_RESPONSE_TEXT;
-}
-
-function estimateTokensForCompaction(value) {
-  const text = typeof value === 'string'
-    ? value
-    : (value == null ? '' : JSON.stringify(value));
-
-  if (text.length === 0) {
-    return 0;
-  }
-
-  return Math.ceil((text.length / 4) * 1.1);
-}
-
-function estimateMessageTokens(message) {
-  const roleTokens = estimateTokensForCompaction(message?.role);
-  const contentTokens = estimateTokensForCompaction(message?.content);
-  return roleTokens + contentTokens + 4;
-}
-
-function summarizeCompactedMessages(messages = []) {
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return '';
-  }
-
-  const tail = messages.slice(-COMPACTION_SUMMARY_LIMIT);
-  return tail
-    .map((message) => {
-      const role = typeof message?.role === 'string' ? message.role : 'unknown';
-      const text = typeof message?.content === 'string'
-        ? message.content.trim()
-        : JSON.stringify(message?.content ?? '');
-      const snippet = text.length > COMPACTION_SUMMARY_SNIPPET_LENGTH
-        ? `${text.slice(0, COMPACTION_SUMMARY_SNIPPET_LENGTH)}...`
-        : text;
-      return `${role}: ${snippet}`;
-    })
-    .join(' | ');
 }
 
 export class AgentLoop {
@@ -313,6 +272,9 @@ export class AgentLoop {
       contextLimit,
       outputReserve: effectiveOutputReserve,
       layerBudgets,
+      tokenCounter: typeof this.#provider?.countTokens === 'function'
+        ? (input) => this.#provider.countTokens(input)
+        : null,
     });
   }
 
@@ -459,7 +421,7 @@ export class AgentLoop {
     const skillContent = await this.#loadSkillText(event);
     const priorSteps = this.#buildPriorSteps(event);
 
-    const builtContext = this.#contextManager.buildMessages({
+    const builtContext = await Promise.resolve(this.#contextManager.buildMessages({
       event,
       mode: isStepEvent ? 'step' : 'interactive',
       userInput: coerceInputText(event),
@@ -469,7 +431,7 @@ export class AgentLoop {
       skillContent,
       priorSteps,
       tools: getToolDefinitionsForEvent(this.#toolRegistry, event),
-    });
+    }));
 
     return {
       messages: [...(builtContext.messages ?? defaultBuildMessages(event))],
@@ -543,7 +505,14 @@ export class AgentLoop {
             content: typeof completion.text === 'string' ? completion.text : '',
           });
           messages.push({ role: 'user', content: buildContinuationPrompt() });
-          messages = this.#compactMessagesForContinuation(messages, maxOutputTokens);
+          const compacted = await this.#compactMessagesForContinuation({
+            messages,
+            maxOutputTokens,
+            continuationCount,
+            lastCompletionText: textPart,
+          });
+          messages = compacted.messages;
+          maxOutputTokens = compacted.maxOutputTokens;
           this.#queueEmit({
             type: 'agent:status',
             channel: event.channel,
@@ -601,50 +570,15 @@ export class AgentLoop {
     }
   }
 
-  #compactMessagesForContinuation(messages, maxOutputTokens) {
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return [];
+  async #compactMessagesForContinuation(options = {}) {
+    if (typeof this.#contextManager?.compactMessagesForContinuation !== 'function') {
+      return {
+        messages: options.messages ?? [],
+        maxOutputTokens: options.maxOutputTokens ?? this.#maxTokens,
+      };
     }
 
-    const inputBudget = Math.max(
-      1,
-      this.#contextLimit - maxOutputTokens - CONTINUATION_COMPACTION_BUFFER,
-    );
-    const totalTokens = messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
-    if (totalTokens <= inputBudget) {
-      return messages;
-    }
-
-    const systemMessages = messages.filter((message) => message?.role === 'system');
-    const nonSystemMessages = messages.filter((message) => message?.role !== 'system');
-    const keepTailCount = 8;
-    const tailMessages = nonSystemMessages.slice(-keepTailCount);
-    const compactedMessages = nonSystemMessages.slice(0, Math.max(0, nonSystemMessages.length - keepTailCount));
-    const compactedSummary = summarizeCompactedMessages(compactedMessages);
-
-    const rebuilt = [...systemMessages];
-    if (compactedSummary) {
-      rebuilt.push({
-        role: 'system',
-        content: `Compacted earlier context:\n${compactedSummary}`,
-      });
-    }
-    rebuilt.push(...tailMessages);
-
-    while (rebuilt.length > 2) {
-      const rebuiltTokens = rebuilt.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
-      if (rebuiltTokens <= inputBudget) {
-        break;
-      }
-
-      const dropIndex = rebuilt.findIndex((message) => message?.role !== 'system');
-      if (dropIndex === -1) {
-        break;
-      }
-      rebuilt.splice(dropIndex, 1);
-    }
-
-    return rebuilt;
+    return this.#contextManager.compactMessagesForContinuation(options);
   }
 
   #shouldContinueCompletion(completion, continuationCount) {

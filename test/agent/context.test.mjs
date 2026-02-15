@@ -78,6 +78,38 @@ test('dynamic output budget scales up when input usage is low', () => {
   assert.equal(result.maxOutputTokens, 8_192 - result.tokenUsage.usedInputTokens - 32);
 });
 
+test('continuation compaction preserves pinned context and fits within budget', async () => {
+  const context = createAgentContext({
+    contextLimit: 360,
+    outputReserve: 120,
+    completionSafetyBuffer: 16,
+  });
+
+  const messages = [
+    { role: 'system', content: 'Global rules stay pinned.' },
+    ...Array.from({ length: 10 }).map((_, index) => ({
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `turn ${index} ${'x'.repeat(80)}`,
+    })),
+    { role: 'assistant', content: 'Partial answer chunk.' },
+    { role: 'user', content: 'Continue exactly.' },
+  ];
+
+  const compacted = await context.compactMessagesForContinuation({
+    messages,
+    maxOutputTokens: 120,
+    continuationCount: 1,
+    lastCompletionText: 'Partial answer chunk.',
+  });
+
+  assert.ok(compacted.messages.length <= messages.length);
+  assert.ok(compacted.compacted);
+  assert.ok(compacted.messages.some((message) => message.role === 'system'));
+  assert.ok(compacted.messages.some((message) => message.role === 'assistant' && /Partial answer chunk/.test(message.content)));
+  assert.ok(compacted.messages.some((message) => message.role === 'user' && /Continue exactly/.test(message.content)));
+  assert.ok(compacted.maxOutputTokens > 0);
+});
+
 test('helper functions provide stable token and compaction behavior', () => {
   const tokenCount = estimateTokens('abcd'.repeat(10));
   assert.ok(tokenCount > 0);

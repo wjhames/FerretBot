@@ -42,6 +42,9 @@ const DEFAULT_TOKEN_ESTIMATOR_CONFIG = Object.freeze({
   safetyMargin: 1.1,
 });
 const DEFAULT_COMPLETION_SAFETY_BUFFER = 32;
+const CONTINUATION_KEEP_IF_POSSIBLE_TAIL = 8;
+const CONTINUATION_SUMMARY_LIMIT = 6;
+const CONTINUATION_SUMMARY_SNIPPET_LENGTH = 80;
 
 function normalizeBudgetValue(value, fallback) {
   if (!Number.isFinite(value)) {
@@ -190,6 +193,33 @@ export function estimateTokens(text, options = {}) {
   return Math.ceil(raw * safetyMargin);
 }
 
+function estimateMessageTokens(message, options = {}) {
+  return estimateTokens(message?.role ?? '', options)
+    + estimateTokens(message?.content ?? '', options)
+    + 4;
+}
+
+function summarizeMessages(messages = []) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return '';
+  }
+
+  return messages
+    .slice(-CONTINUATION_SUMMARY_LIMIT)
+    .map((message) => {
+      const role = toText(message?.role).trim() || 'unknown';
+      const content = toText(message?.content).trim();
+      if (content.length === 0) {
+        return `${role}: [no content]`;
+      }
+      const snippet = content.length > CONTINUATION_SUMMARY_SNIPPET_LENGTH
+        ? `${content.slice(0, CONTINUATION_SUMMARY_SNIPPET_LENGTH)}...`
+        : content;
+      return `${role}: ${snippet}`;
+    })
+    .join(' | ');
+}
+
 export function truncateToTokenBudget(text, maxTokens, options = {}) {
   if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
     return '';
@@ -326,6 +356,7 @@ export class AgentContext {
   #layerBudgets;
   #tokenEstimatorConfig;
   #completionSafetyBuffer;
+  #tokenCounter;
 
   constructor(options = {}) {
     this.#contextLimit = options.contextLimit ?? DEFAULT_CONTEXT_LIMIT;
@@ -339,6 +370,7 @@ export class AgentContext {
     this.#completionSafetyBuffer = Number.isFinite(options.completionSafetyBuffer)
       ? Math.max(0, Math.floor(options.completionSafetyBuffer))
       : DEFAULT_COMPLETION_SAFETY_BUFFER;
+    this.#tokenCounter = typeof options.tokenCounter === 'function' ? options.tokenCounter : null;
 
     if (this.#outputReserve >= this.#contextLimit) {
       throw new TypeError('outputReserve must be smaller than contextLimit.');
@@ -347,6 +379,39 @@ export class AgentContext {
 
   getLayerBudgets() {
     return { ...this.#layerBudgets };
+  }
+
+  async #estimateMessagesTokens(messages = []) {
+    if (this.#tokenCounter) {
+      try {
+        const counted = await this.#tokenCounter(messages);
+        if (Number.isFinite(counted) && counted >= 0) {
+          return Math.floor(counted);
+        }
+      } catch {
+        // Fall back to local estimator when remote tokenizer is unavailable.
+      }
+    }
+
+    return messages.reduce(
+      (sum, message) => sum + estimateMessageTokens(message, this.#tokenEstimatorConfig),
+      0,
+    );
+  }
+
+  async #estimateTextTokens(text) {
+    if (this.#tokenCounter) {
+      try {
+        const counted = await this.#tokenCounter(String(text ?? ''));
+        if (Number.isFinite(counted) && counted >= 0) {
+          return Math.floor(counted);
+        }
+      } catch {
+        // Fall back to local estimator when remote tokenizer is unavailable.
+      }
+    }
+
+    return estimateTokens(text, this.#tokenEstimatorConfig);
   }
 
   buildMessages(input = {}) {
@@ -421,6 +486,110 @@ export class AgentContext {
       messages,
       tokenUsage,
       maxOutputTokens: dynamicOutputBudget,
+    };
+  }
+
+  async compactMessagesForContinuation(options = {}) {
+    const {
+      messages = [],
+      maxOutputTokens = this.#outputReserve,
+      continuationCount = 0,
+      lastCompletionText = '',
+    } = options;
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return {
+        messages: [],
+        maxOutputTokens: Math.max(1, this.#outputReserve),
+        compacted: false,
+      };
+    }
+
+    const inputBudget = Math.max(
+      1,
+      this.#contextLimit - Math.max(1, Math.floor(maxOutputTokens)) - this.#completionSafetyBuffer,
+    );
+    const keepTailStart = Math.max(0, messages.length - CONTINUATION_KEEP_IF_POSSIBLE_TAIL);
+
+    const mustKeep = [];
+    const keepIfPossible = [];
+    const evictFirst = [];
+    for (let index = 0; index < messages.length; index += 1) {
+      const message = messages[index];
+      const role = message?.role;
+      if (role === 'system' || role === 'tool' || index >= messages.length - 2) {
+        mustKeep.push(message);
+        continue;
+      }
+      if (index >= keepTailStart) {
+        keepIfPossible.push(message);
+        continue;
+      }
+      evictFirst.push(message);
+    }
+
+    let dropped = [];
+    const candidate = [...messages];
+    const mustKeepSet = new Set(mustKeep);
+    let estimated = await this.#estimateMessagesTokens(candidate);
+    if (estimated > inputBudget) {
+      const orderedDrops = [...evictFirst, ...keepIfPossible];
+      for (const drop of orderedDrops) {
+        if (estimated <= inputBudget) {
+          break;
+        }
+        if (mustKeepSet.has(drop)) {
+          continue;
+        }
+        const index = candidate.indexOf(drop);
+        if (index === -1) {
+          continue;
+        }
+        candidate.splice(index, 1);
+        dropped.push(drop);
+        estimated = await this.#estimateMessagesTokens(candidate);
+      }
+    }
+
+    let compactedMessages = candidate;
+    if (dropped.length > 0) {
+      const summary = summarizeMessages(dropped);
+      if (summary) {
+        const summaryMessage = {
+          role: 'system',
+          content: `Compacted earlier context:\n${summary}`,
+        };
+        compactedMessages = [...candidate];
+        const insertAt = compactedMessages.findLastIndex((message) => message?.role === 'system');
+        compactedMessages.splice(insertAt >= 0 ? insertAt + 1 : 0, 0, summaryMessage);
+
+        let summaryText = summary;
+        while (summaryText.length > 16) {
+          const compactedTokens = await this.#estimateMessagesTokens(compactedMessages);
+          if (compactedTokens <= inputBudget) {
+            break;
+          }
+          summaryText = `${summaryText.slice(0, Math.floor(summaryText.length * 0.8)).trim()}...`;
+          summaryMessage.content = `Compacted earlier context:\n${summaryText}`;
+        }
+      }
+    }
+
+    const finalInputTokens = await this.#estimateMessagesTokens(compactedMessages);
+    const availableOutput = Math.max(1, this.#contextLimit - finalInputTokens - this.#completionSafetyBuffer);
+    const lastCompletionTokens = await this.#estimateTextTokens(lastCompletionText);
+    const priorBasedTarget = Math.max(
+      64,
+      lastCompletionTokens > 0 ? Math.ceil(lastCompletionTokens * 1.8) : this.#outputReserve,
+    );
+    const continuationTarget = continuationCount <= 0
+      ? availableOutput
+      : Math.min(availableOutput, priorBasedTarget);
+
+    return {
+      messages: compactedMessages,
+      maxOutputTokens: Math.max(1, Math.floor(continuationTarget)),
+      compacted: dropped.length > 0,
     };
   }
 }

@@ -43,6 +43,22 @@ test('collects latest turns up to token budget and summarizes older ones', async
   assert.match(result.summary, /alpha/);
 });
 
+test('persists structured summary lines across collection calls', async () => {
+  const memory = new SessionMemory({ baseDir: path.join(FIXTURE_ROOT, 'summary-persist') });
+  await memory.appendTurn('session-summary', { role: 'user', content: 'first issue discussed' });
+  await memory.appendTurn('session-summary', { role: 'assistant', content: 'first resolution proposed' });
+  await memory.appendTurn('session-summary', { role: 'user', content: 'second issue discussed' });
+
+  const first = await memory.collectConversation('session-summary', { tokenLimit: 1 });
+  assert.match(first.summary, /first issue/);
+
+  await memory.appendTurn('session-summary', { role: 'assistant', content: 'follow-up with details' });
+  const second = await memory.collectConversation('session-summary', { tokenLimit: 1 });
+
+  assert.match(second.summary, /first issue|second issue/);
+  assert.match(second.summary, /first resolution|follow-up|second issue/);
+});
+
 test('returns full history when token limit is not set', async () => {
   const memory = new SessionMemory({ baseDir: path.join(FIXTURE_ROOT, 'nolimit') });
   await memory.appendTurn('session-full', { role: 'user', content: 'first' });

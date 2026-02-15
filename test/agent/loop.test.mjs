@@ -234,22 +234,25 @@ test('loop continues generation when model hits token limit', async () => {
     bus,
     provider,
     parser,
-    contextManager: {
-      buildMessages() {
+    sessionMemory: {
+      async collectConversation() {
         return {
-          messages: [
-            { role: 'system', content: 'Pinned system rules.' },
-            ...Array.from({ length: 12 }).map((_, index) => ({
-              role: index % 2 === 0 ? 'user' : 'assistant',
-              content: `history ${index} ${'x'.repeat(70)}`,
-            })),
-            { role: 'user', content: 'Write a long response' },
-          ],
-          maxOutputTokens: 64,
+          summary: '',
+          turns: Array.from({ length: 12 }).map((_, index) => ({
+            role: index % 2 === 0 ? 'user' : 'assistant',
+            content: `history ${index} ${'x'.repeat(200)}`,
+          })),
         };
       },
     },
-    contextLimit: 320,
+    contextLimit: 500,
+    layerBudgets: {
+      system: 60,
+      step: 0,
+      skills: 0,
+      prior: 0,
+      conversation: 400,
+    },
     maxTokens: 64,
     maxContinuations: 2,
   });
@@ -281,6 +284,11 @@ test('loop continues generation when model hits token limit', async () => {
     (message) => message.role === 'system'
       && typeof message.content === 'string'
       && message.content.includes('Compacted earlier context:'),
+  ));
+  assert.ok(secondCallMessages.some(
+    (message) => message.role === 'assistant'
+      && typeof message.content === 'string'
+      && message.content.includes('Part one.'),
   ));
 });
 

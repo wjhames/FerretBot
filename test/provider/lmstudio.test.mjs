@@ -187,6 +187,49 @@ test('discoverModelCapabilities returns model context window and caches result',
   assert.deepEqual(first, {
     model: 'openai/gpt-oss-20b',
     contextWindow: 32768,
+    supportsTokenCounting: true,
   });
   assert.deepEqual(second, first);
+});
+
+test('countTokens uses tokenize endpoint and returns token length', async () => {
+  const calls = [];
+  const provider = createLmStudioProvider({
+    model: 'openai/gpt-oss-20b',
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        async json() {
+          return { tokens: [1, 2, 3, 4] };
+        },
+      };
+    },
+  });
+
+  const count = await provider.countTokens([
+    { role: 'system', content: 'rules' },
+    { role: 'user', content: 'hello' },
+  ]);
+
+  assert.equal(count, 4);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'http://192.168.1.7:1234/v1/tokenize');
+  assert.equal(calls[0].init.method, 'POST');
+});
+
+test('countTokens returns null when tokenize endpoint is unavailable', async () => {
+  const provider = createLmStudioProvider({
+    model: 'openai/gpt-oss-20b',
+    fetchImpl: async () => ({
+      ok: false,
+      status: 404,
+      async text() {
+        return 'not found';
+      },
+    }),
+  });
+
+  const count = await provider.countTokens('hello');
+  assert.equal(count, null);
 });

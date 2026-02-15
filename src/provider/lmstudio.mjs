@@ -21,6 +21,7 @@ export class LmStudioProvider {
   #timeoutMs;
   #fetch;
   #modelCapabilities;
+  #tokenizeSupport;
 
   constructor(options = {}) {
     const {
@@ -43,6 +44,7 @@ export class LmStudioProvider {
     this.#timeoutMs = timeoutMs;
     this.#fetch = fetchImpl;
     this.#modelCapabilities = null;
+    this.#tokenizeSupport = 'unknown';
   }
 
   getConfig() {
@@ -128,10 +130,43 @@ export class LmStudioProvider {
     const contextWindow = extractContextWindow(selected);
 
     this.#modelCapabilities = contextWindow
-      ? { model: selected?.id ?? this.#defaultModel, contextWindow }
-      : { model: selected?.id ?? this.#defaultModel };
+      ? { model: selected?.id ?? this.#defaultModel, contextWindow, supportsTokenCounting: this.#tokenizeSupport !== 'unsupported' }
+      : { model: selected?.id ?? this.#defaultModel, supportsTokenCounting: this.#tokenizeSupport !== 'unsupported' };
 
     return this.#modelCapabilities;
+  }
+
+  async countTokens(input, options = {}) {
+    if (this.#tokenizeSupport === 'unsupported') {
+      return null;
+    }
+
+    const model = typeof options.model === 'string' && options.model.length > 0
+      ? options.model
+      : this.#defaultModel;
+    const normalizedInput = normalizeTokenInput(input);
+
+    try {
+      const response = await this.#fetchJson('/tokenize', {
+        method: 'POST',
+        body: {
+          model,
+          input: normalizedInput,
+        },
+        signal: options.signal,
+      });
+      const counted = parseTokenCount(response);
+      if (Number.isFinite(counted) && counted >= 0) {
+        this.#tokenizeSupport = 'supported';
+        return Math.floor(counted);
+      }
+    } catch {
+      this.#tokenizeSupport = 'unsupported';
+      return null;
+    }
+
+    this.#tokenizeSupport = 'unsupported';
+    return null;
   }
 
   async #fetchJson(path, options = {}) {
@@ -202,6 +237,44 @@ function extractContextWindow(model = {}) {
   for (const candidate of candidates) {
     if (Number.isFinite(candidate) && candidate > 0) {
       return Math.floor(candidate);
+    }
+  }
+
+  return null;
+}
+
+function normalizeTokenInput(input) {
+  if (typeof input === 'string') {
+    return input;
+  }
+
+  if (Array.isArray(input)) {
+    return input
+      .map((message) => {
+        const role = typeof message?.role === 'string' ? message.role : 'unknown';
+        const content = typeof message?.content === 'string'
+          ? message.content
+          : JSON.stringify(message?.content ?? '');
+        return `${role}: ${content}`;
+      })
+      .join('\n');
+  }
+
+  return JSON.stringify(input ?? '');
+}
+
+function parseTokenCount(response) {
+  const candidates = [
+    response?.count,
+    response?.total_tokens,
+    response?.token_count,
+    response?.usage?.total_tokens,
+    Array.isArray(response?.tokens) ? response.tokens.length : null,
+  ];
+
+  for (const candidate of candidates) {
+    if (Number.isFinite(candidate) && candidate >= 0) {
+      return candidate;
     }
   }
 
