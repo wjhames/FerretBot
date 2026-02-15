@@ -463,3 +463,85 @@ test('loop restricts task step tool schemas to step tools plus task', async () =
   const sentTools = providerCalls[0].tools.map((tool) => tool.name).sort();
   assert.deepEqual(sentTools, ['read', 'task']);
 });
+
+test('loop handles workflow:step:start, scopes tools, and emits workflow:step:complete', async () => {
+  const bus = createEventBus();
+  const emitted = [];
+  const providerCalls = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  const provider = {
+    async chatCompletion(input) {
+      providerCalls.push(input);
+      return {
+        text: 'workflow step done',
+        toolCalls: [],
+        finishReason: 'stop',
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      };
+    },
+  };
+
+  const parser = {
+    parse(text) {
+      return { kind: 'final', text };
+    },
+  };
+
+  const loop = createAgentLoop({
+    bus,
+    provider,
+    parser,
+    toolRegistry: {
+      list() {
+        return [
+          { name: 'bash', description: 'run shell', schema: { type: 'object' } },
+          { name: 'read', description: 'read file', schema: { type: 'object' } },
+          { name: 'task', description: 'task control', schema: { type: 'object' } },
+        ];
+      },
+      validateCall() {
+        return { valid: true, errors: [] };
+      },
+      async execute() {
+        return {};
+      },
+    },
+    maxTokens: 128,
+  });
+
+  loop.start();
+  await bus.emit({
+    type: 'workflow:step:start',
+    channel: 'tui',
+    sessionId: 's-wf',
+    content: {
+      runId: 42,
+      workflowId: 'test-wf',
+      step: {
+        id: 'build',
+        instruction: 'build the project',
+        tools: ['bash'],
+        total: 3,
+      },
+    },
+  });
+
+  await waitFor(() => emitted.some((event) => event.type === 'workflow:step:complete'));
+  loop.stop();
+
+  const sentTools = providerCalls[0].tools.map((tool) => tool.name).sort();
+  assert.deepEqual(sentTools, ['bash']);
+
+  const stepComplete = emitted.find((event) => event.type === 'workflow:step:complete');
+  assert.ok(stepComplete);
+  assert.equal(stepComplete.content.runId, 42);
+  assert.equal(stepComplete.content.stepId, 'build');
+  assert.equal(stepComplete.content.result, 'workflow step done');
+
+  const taskComplete = emitted.find((event) => event.type === 'task:step:complete');
+  assert.equal(taskComplete, undefined);
+});

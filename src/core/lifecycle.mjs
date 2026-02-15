@@ -9,6 +9,8 @@ import { createAgentParser } from '../agent/parser.mjs';
 import { createAgentLoop } from '../agent/loop.mjs';
 import { createToolRegistry } from '../tools/registry.mjs';
 import { createTaskManager } from '../tasks/manager.mjs';
+import { createWorkflowRegistry } from '../workflows/registry.mjs';
+import { createWorkflowEngine } from '../workflows/engine.mjs';
 
 const DEFAULT_CONFIG_PATH = DEFAULT_AGENT_CONFIG_PATH;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -86,6 +88,8 @@ export class AgentLifecycle {
   #createToolRegistry;
   #createAgentLoop;
   #createIpcServer;
+  #createWorkflowRegistry;
+  #createWorkflowEngine;
   #createScheduler;
   #persistState;
 
@@ -108,6 +112,8 @@ export class AgentLifecycle {
     this.#createToolRegistry = options.createToolRegistry ?? defaultCreateToolRegistry;
     this.#createAgentLoop = options.createAgentLoop ?? ((deps) => createAgentLoop(deps));
     this.#createIpcServer = options.createIpcServer ?? defaultCreateIpcServer;
+    this.#createWorkflowRegistry = options.createWorkflowRegistry ?? (({ config }) => createWorkflowRegistry({ baseDir: config.workflows?.rootDir }));
+    this.#createWorkflowEngine = options.createWorkflowEngine ?? (({ bus, registry, config }) => createWorkflowEngine({ bus, registry, storageDir: config.workflows?.runsDir }));
     this.#createScheduler = options.createScheduler ?? ((_) => createNoopScheduler());
     this.#persistState = options.persistState ?? (async () => {});
 
@@ -128,6 +134,12 @@ export class AgentLifecycle {
     const provider = this.#createProvider(config);
     const parser = this.#createParser(config);
     const taskManager = this.#createTaskManager({ bus, config });
+
+    const workflowRegistry = this.#createWorkflowRegistry({ config });
+    await workflowRegistry.loadAll();
+    const workflowEngine = this.#createWorkflowEngine({ bus, registry: workflowRegistry, config });
+    workflowEngine.start();
+
     const toolRegistry = this.#createToolRegistry({ config, bus, taskManager });
 
     if (typeof toolRegistry.registerBuiltIns === 'function') {
@@ -167,6 +179,8 @@ export class AgentLifecycle {
       provider,
       parser,
       taskManager,
+      workflowRegistry,
+      workflowEngine,
       toolRegistry,
       agentLoop,
       ipcServer,
@@ -190,7 +204,7 @@ export class AgentLifecycle {
 
     this.#shuttingDown = true;
 
-    const { bus, ipcServer, scheduler, agentLoop } = this.#runtime;
+    const { bus, ipcServer, scheduler, workflowEngine, agentLoop } = this.#runtime;
 
     try {
       if (typeof ipcServer.stopAccepting === 'function') {
@@ -210,6 +224,10 @@ export class AgentLifecycle {
 
       if (typeof scheduler.stop === 'function') {
         await scheduler.stop();
+      }
+
+      if (typeof workflowEngine?.stop === 'function') {
+        workflowEngine.stop();
       }
 
       if (typeof agentLoop.stop === 'function') {

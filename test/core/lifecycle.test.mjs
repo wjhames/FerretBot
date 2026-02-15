@@ -97,6 +97,20 @@ test('lifecycle start/shutdown follows expected orchestration order', async () =
       recorder.push('tasks.create');
       return taskManager;
     },
+    createWorkflowRegistry: () => {
+      recorder.push('workflowRegistry.create');
+      return {
+        async loadAll() { recorder.push('workflowRegistry.loadAll'); },
+        get() { return null; },
+      };
+    },
+    createWorkflowEngine: () => {
+      recorder.push('workflowEngine.create');
+      return {
+        start() { recorder.push('workflowEngine.start'); },
+        stop() { recorder.push('workflowEngine.stop'); },
+      };
+    },
     createToolRegistry: () => {
       recorder.push('tools.create');
       return toolRegistry;
@@ -127,6 +141,10 @@ test('lifecycle start/shutdown follows expected orchestration order', async () =
     'provider.create',
     'parser.create',
     'tasks.create',
+    'workflowRegistry.create',
+    'workflowRegistry.loadAll',
+    'workflowEngine.create',
+    'workflowEngine.start',
     'tools.create',
     'tools.registerBuiltIns',
     'agentLoop.create',
@@ -140,6 +158,7 @@ test('lifecycle start/shutdown follows expected orchestration order', async () =
     'state.persist',
     'ipc.disconnectAllClients',
     'scheduler.stop',
+    'workflowEngine.stop',
     'agentLoop.stop',
   ]);
 });
@@ -161,6 +180,8 @@ test('lifecycle responds to SIGTERM and shuts down once', async () => {
     createProvider: () => ({ chatCompletion: async () => ({ text: '', usage: {}, finishReason: 'stop' }) }),
     createParser: () => ({ parse: () => ({ kind: 'final', text: '' }) }),
     createTaskManager: () => ({ marker: true }),
+    createWorkflowRegistry: () => ({ async loadAll() {}, get() { return null; } }),
+    createWorkflowEngine: () => ({ start() {}, stop() { calls.push('workflowEngine.stop'); } }),
     createToolRegistry: () => ({ execute: async () => ({ ok: true }) }),
     createAgentLoop: () => ({
       start() {
@@ -204,6 +225,7 @@ test('lifecycle responds to SIGTERM and shuts down once', async () => {
     'persist.SIGTERM',
     'ipc.disconnectAllClients',
     'scheduler.stop',
+    'workflowEngine.stop',
     'loop.stop',
   ]);
 });
@@ -218,6 +240,8 @@ test('lifecycle default tool registry registers built-in tools', async () => {
     }),
     createProvider: () => ({ chatCompletion: async () => ({ text: '', usage: {}, finishReason: 'stop' }) }),
     createParser: () => ({ parse: () => ({ kind: 'final', text: '' }) }),
+    createWorkflowRegistry: () => ({ async loadAll() {}, get() { return null; } }),
+    createWorkflowEngine: () => ({ start() {}, stop() {} }),
     createAgentLoop: () => ({
       start() {},
       stop() {},

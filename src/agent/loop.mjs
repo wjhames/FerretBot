@@ -4,6 +4,7 @@ const DEFAULT_PROCESSABLE_EVENTS = new Set([
   'user:input',
   'schedule:trigger',
   'task:step:start',
+  'workflow:step:start',
 ]);
 
 const DEFAULT_RETRY_LIMIT = 2;
@@ -64,19 +65,19 @@ function getToolDefinitions(toolRegistry) {
 
 function getToolDefinitionsForEvent(toolRegistry, event) {
   const allTools = getToolDefinitions(toolRegistry);
-  if (event.type !== 'task:step:start') {
-    return allTools;
-  }
 
-  const stepTools = Array.isArray(event.content?.step?.tools)
-    ? event.content.step.tools
-    : [];
+  const stepTools = event.content?.step?.tools;
+  if (!Array.isArray(stepTools)) return allTools;
+
   const allowed = new Set(
     stepTools.filter(
       (name) => typeof name === 'string' && name.trim().length > 0,
     ),
   );
-  allowed.add('task');
+
+  if (event.type === 'task:step:start') {
+    allowed.add('task');
+  }
 
   return allTools.filter((tool) => allowed.has(tool.name));
 }
@@ -208,12 +209,14 @@ export class AgentLoop {
   }
 
   #buildInitialContext(event) {
+    const isStepEvent =
+      event.type === 'task:step:start' || event.type === 'workflow:step:start';
+
     const builtContext = this.#contextManager.buildMessages({
       event,
-      mode: event.type === 'task:step:start' ? 'step' : 'interactive',
+      mode: isStepEvent ? 'step' : 'interactive',
       userInput: coerceInputText(event),
-      step:
-        event.type === 'task:step:start' ? (event.content?.step ?? null) : null,
+      step: isStepEvent ? (event.content?.step ?? null) : null,
     });
 
     return {
@@ -392,6 +395,19 @@ export class AgentLoop {
         channel: event.channel,
         sessionId: event.sessionId,
         content: {
+          result: finalText,
+        },
+      });
+    }
+
+    if (event.type === 'workflow:step:start') {
+      this.#queueEmit({
+        type: 'workflow:step:complete',
+        channel: event.channel,
+        sessionId: event.sessionId,
+        content: {
+          runId: event.content?.runId,
+          stepId: event.content?.step?.id,
           result: finalText,
         },
       });
