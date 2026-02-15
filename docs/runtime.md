@@ -44,16 +44,16 @@ The agent is headless and can run with zero clients connected.
 - Context budgeting:
   Layer budget aliases (`systemPrompt`, `taskScope`, `skillContent`, `priorContext`) are normalized to runtime layer names and fixed layers are scaled to fit the current input budget.
 
-## Phase 3 Task System Wiring
+## Phase 3.5 Workflow Runtime Wiring
 
-- Built-in `task` tool:
-  The tool registry now registers `task` when the lifecycle provides both bus and task manager dependencies.
+- Workflow engine:
+  The lifecycle loads workflow definitions, starts the workflow registry/engine, and emits deterministic workflow step events.
 
-- Step-scoped tool visibility:
-  During `task:step:start`, the loop sends only step-assigned tools plus `task` to the model. This avoids presenting unrelated tool schemas.
+- Workflow step execution:
+  During `workflow:step:start`, the loop sends only step-assigned tools to the model and auto-emits `workflow:step:complete` on final text responses.
 
-- Task state events:
-  The bus and IPC routing include `task:step:failed`, `task:step:skipped`, `task:note`, and `task:failed` in addition to existing task events.
+- Legacy compatibility adapters:
+  The built-in `task` tool is still registered when lifecycle provides the legacy task manager. During `task:step:start`, the loop exposes step-assigned tools plus `task`.
 
-- Current boundary:
-  Planner output is validated and the manager can run plans, but automatic conversion of every `user:input` into planned tasks is not enabled by default. Task execution requires creating a task plan through explicit orchestration.
+- Event routing:
+  IPC forwards both legacy task events and workflow events so connected clients can observe run lifecycle and step progression.

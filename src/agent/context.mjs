@@ -14,6 +14,7 @@ export const DEFAULT_LAYER_BUDGETS = Object.freeze({
 const LAYER_NAME_ALIASES = Object.freeze({
   systemPrompt: 'system',
   taskScope: 'task',
+  stepScope: 'task',
   skillContent: 'skills',
   priorContext: 'prior',
 });
@@ -217,18 +218,18 @@ function buildLayerText(options = {}) {
     extraRules,
   });
 
-  const taskParts = [];
+  const stepScopeParts = [];
   const toolText = formatToolSchemas(tools);
   if (step?.instruction) {
-    taskParts.push(`Current task scope:\n${toText(step.instruction).trim()}`);
+    stepScopeParts.push(`Current step scope:\n${toText(step.instruction).trim()}`);
   }
   if (toolText) {
-    taskParts.push(`Available tools:\n${toolText}`);
+    stepScopeParts.push(`Available tools:\n${toolText}`);
   }
 
   return {
     system: systemText,
-    task: taskParts.join('\n\n'),
+    task: stepScopeParts.join('\n\n'),
     skills: toText(skillContent).trim(),
     prior: compressPriorSteps(priorSteps),
   };

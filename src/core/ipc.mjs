@@ -16,6 +16,11 @@ const OUTBOUND_EVENT_TYPES = new Set([
   'task:note',
   'task:failed',
   'task:complete',
+  'workflow:run:queued',
+  'workflow:step:start',
+  'workflow:step:complete',
+  'workflow:needs_approval',
+  'workflow:run:complete',
 ]);
 
 function normalizeInboundMessage(rawLine) {

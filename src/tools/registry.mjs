@@ -142,13 +142,15 @@ export class ToolRegistry {
   #builtInOptions;
 
   constructor(options = {}) {
+    const legacyTaskManager = options.legacyTaskManager ?? options.taskManager;
+
     this.#tools = new Map();
     this.#builtInOptions = {
       cwd: options.cwd ?? process.cwd(),
       rootDir: options.rootDir ?? process.cwd(),
       maxReadBytes: options.maxReadBytes,
       bus: options.bus,
-      taskManager: options.taskManager,
+      taskManager: legacyTaskManager,
     };
   }
 

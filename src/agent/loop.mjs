@@ -1,10 +1,16 @@
 import { createAgentContext } from './context.mjs';
 
+const LEGACY_TASK_STEP_START_EVENT = 'task:step:start';
+const WORKFLOW_STEP_START_EVENT = 'workflow:step:start';
+const STEP_START_EVENTS = new Set([
+  LEGACY_TASK_STEP_START_EVENT,
+  WORKFLOW_STEP_START_EVENT,
+]);
+
 const DEFAULT_PROCESSABLE_EVENTS = new Set([
   'user:input',
   'schedule:trigger',
-  'task:step:start',
-  'workflow:step:start',
+  ...STEP_START_EVENTS,
 ]);
 
 const DEFAULT_RETRY_LIMIT = 2;
@@ -75,7 +81,7 @@ function getToolDefinitionsForEvent(toolRegistry, event) {
     ),
   );
 
-  if (event.type === 'task:step:start') {
+  if (event.type === LEGACY_TASK_STEP_START_EVENT) {
     allowed.add('task');
   }
 
@@ -209,8 +215,7 @@ export class AgentLoop {
   }
 
   #buildInitialContext(event) {
-    const isStepEvent =
-      event.type === 'task:step:start' || event.type === 'workflow:step:start';
+    const isStepEvent = STEP_START_EVENTS.has(event.type);
 
     const builtContext = this.#contextManager.buildMessages({
       event,
@@ -389,7 +394,7 @@ export class AgentLoop {
       },
     });
 
-    if (event.type === 'task:step:start') {
+    if (event.type === LEGACY_TASK_STEP_START_EVENT) {
       this.#queueEmit({
         type: 'task:step:complete',
         channel: event.channel,
@@ -400,7 +405,7 @@ export class AgentLoop {
       });
     }
 
-    if (event.type === 'workflow:step:start') {
+    if (event.type === WORKFLOW_STEP_START_EVENT) {
       this.#queueEmit({
         type: 'workflow:step:complete',
         channel: event.channel,

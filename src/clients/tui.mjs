@@ -359,7 +359,7 @@ export class TuiClient {
       return;
     }
 
-    if (eventType.startsWith('task:')) {
+    if (eventType.startsWith('task:') || eventType.startsWith('workflow:')) {
       this.#appendMessage('system', `[${eventType}] ${toDisplayText(message.content)}`);
     }
   }

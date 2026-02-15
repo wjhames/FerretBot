@@ -8,7 +8,7 @@ import { createLmStudioProvider } from '../provider/lmstudio.mjs';
 import { createAgentParser } from '../agent/parser.mjs';
 import { createAgentLoop } from '../agent/loop.mjs';
 import { createToolRegistry } from '../tools/registry.mjs';
-import { createTaskManager } from '../tasks/manager.mjs';
+import { createTaskManager as createLegacyTaskManager } from '../tasks/manager.mjs';
 import { createWorkflowRegistry } from '../workflows/registry.mjs';
 import { createWorkflowEngine } from '../workflows/engine.mjs';
 
@@ -49,20 +49,25 @@ async function drainBusQueue(bus, { timeoutMs, pollMs }) {
   }
 }
 
-function defaultCreateToolRegistry({ config = {}, bus, taskManager } = {}) {
+function resolveLegacyTaskStorageDir(config = {}) {
+  return config.workflows?.legacyTasks?.storageDir ?? config.tasks?.storageDir;
+}
+
+function defaultCreateToolRegistry({ config = {}, bus, legacyTaskManager } = {}) {
   return createToolRegistry({
     cwd: config.tools?.cwd,
     rootDir: config.tools?.rootDir,
     maxReadBytes: config.tools?.maxReadBytes,
     bus,
-    taskManager,
+    taskManager: legacyTaskManager,
+    legacyTaskManager,
   });
 }
 
-function defaultCreateTaskManager({ bus, config = {} }) {
-  return createTaskManager({
+function defaultCreateLegacyTaskManager({ bus, config = {} }) {
+  return createLegacyTaskManager({
     bus,
-    storageDir: config.tasks?.storageDir,
+    storageDir: resolveLegacyTaskStorageDir(config),
   });
 }
 
@@ -84,7 +89,7 @@ export class AgentLifecycle {
   #createBus;
   #createProvider;
   #createParser;
-  #createTaskManager;
+  #createLegacyTaskManager;
   #createToolRegistry;
   #createAgentLoop;
   #createIpcServer;
@@ -108,7 +113,7 @@ export class AgentLifecycle {
     this.#createBus = options.createBus ?? ((_) => createEventBus());
     this.#createProvider = options.createProvider ?? ((config) => createLmStudioProvider(config.provider));
     this.#createParser = options.createParser ?? (() => createAgentParser());
-    this.#createTaskManager = options.createTaskManager ?? defaultCreateTaskManager;
+    this.#createLegacyTaskManager = options.createTaskManager ?? options.createLegacyTaskManager ?? defaultCreateLegacyTaskManager;
     this.#createToolRegistry = options.createToolRegistry ?? defaultCreateToolRegistry;
     this.#createAgentLoop = options.createAgentLoop ?? ((deps) => createAgentLoop(deps));
     this.#createIpcServer = options.createIpcServer ?? defaultCreateIpcServer;
@@ -133,14 +138,19 @@ export class AgentLifecycle {
     const bus = this.#createBus(config);
     const provider = this.#createProvider(config);
     const parser = this.#createParser(config);
-    const taskManager = this.#createTaskManager({ bus, config });
+    const legacyTaskManager = this.#createLegacyTaskManager({ bus, config });
 
     const workflowRegistry = this.#createWorkflowRegistry({ config });
     await workflowRegistry.loadAll();
     const workflowEngine = this.#createWorkflowEngine({ bus, registry: workflowRegistry, config });
     workflowEngine.start();
 
-    const toolRegistry = this.#createToolRegistry({ config, bus, taskManager });
+    const toolRegistry = this.#createToolRegistry({
+      config,
+      bus,
+      taskManager: legacyTaskManager,
+      legacyTaskManager,
+    });
 
     if (typeof toolRegistry.registerBuiltIns === 'function') {
       await toolRegistry.registerBuiltIns();
@@ -150,7 +160,7 @@ export class AgentLifecycle {
       bus,
       provider,
       parser,
-      taskManager,
+      taskManager: legacyTaskManager,
       toolRegistry,
       maxTokens: config.agent?.maxTokens,
       maxToolCallsPerStep: config.agent?.maxToolCallsPerStep,
@@ -178,7 +188,8 @@ export class AgentLifecycle {
       bus,
       provider,
       parser,
-      taskManager,
+      legacyTaskManager,
+      taskManager: legacyTaskManager,
       workflowRegistry,
       workflowEngine,
       toolRegistry,
