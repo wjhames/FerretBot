@@ -234,6 +234,22 @@ test('loop continues generation when model hits token limit', async () => {
     bus,
     provider,
     parser,
+    contextManager: {
+      buildMessages() {
+        return {
+          messages: [
+            { role: 'system', content: 'Pinned system rules.' },
+            ...Array.from({ length: 12 }).map((_, index) => ({
+              role: index % 2 === 0 ? 'user' : 'assistant',
+              content: `history ${index} ${'x'.repeat(70)}`,
+            })),
+            { role: 'user', content: 'Write a long response' },
+          ],
+          maxOutputTokens: 64,
+        };
+      },
+    },
+    contextLimit: 320,
     maxTokens: 64,
     maxContinuations: 2,
   });
@@ -259,6 +275,13 @@ test('loop continues generation when model hits token limit', async () => {
     (event) => event.type === 'agent:status' && event.content.phase === 'generation:continue',
   );
   assert.ok(continuationStatus);
+
+  const secondCallMessages = calls[1].messages;
+  assert.ok(secondCallMessages.some(
+    (message) => message.role === 'system'
+      && typeof message.content === 'string'
+      && message.content.includes('Compacted earlier context:'),
+  ));
 });
 
 test('loop retries on parse/validation errors and then succeeds', async () => {
