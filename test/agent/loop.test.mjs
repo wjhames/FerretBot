@@ -334,6 +334,73 @@ test('loop replaces blank final text with diagnostic message', async () => {
   assert.equal(responseEvent.content.text, 'Model returned an empty response.');
 });
 
+test('loop default context includes a system prompt message', async () => {
+  const bus = createEventBus();
+  const providerCalls = [];
+  const emitted = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  const provider = {
+    async chatCompletion(input) {
+      providerCalls.push(input);
+      return {
+        text: 'ok',
+        toolCalls: [],
+        finishReason: 'stop',
+        usage: {
+          promptTokens: 1,
+          completionTokens: 1,
+          totalTokens: 2,
+        },
+      };
+    },
+  };
+
+  const parser = {
+    parse(text) {
+      return { kind: 'final', text };
+    },
+  };
+
+  const loop = createAgentLoop({
+    bus,
+    provider,
+    parser,
+    toolRegistry: {
+      list() {
+        return [];
+      },
+      validateCall() {
+        return { valid: true, errors: [] };
+      },
+      async execute() {
+        return {};
+      },
+    },
+    maxTokens: 128,
+  });
+
+  loop.start();
+  await bus.emit({
+    type: 'user:input',
+    channel: 'tui',
+    sessionId: 's6',
+    content: { text: 'hello' },
+  });
+
+  await waitFor(() => emitted.some((event) => event.type === 'agent:response'));
+  loop.stop();
+
+  assert.equal(providerCalls.length, 1);
+  assert.equal(providerCalls[0].messages[0].role, 'system');
+  assert.match(providerCalls[0].messages[0].content, /You are FerretBot/);
+  assert.equal(providerCalls[0].messages.at(-1).role, 'user');
+  assert.equal(providerCalls[0].messages.at(-1).content, 'hello');
+});
+
 test('loop treats markdown answers as final output instead of parse-error retry', async () => {
   const bus = createEventBus();
   const emitted = [];

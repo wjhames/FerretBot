@@ -1,4 +1,5 @@
-import { createAgentContext } from './context.mjs';
+import { DEFAULT_CONTEXT_LIMIT, createAgentContext } from './context.mjs';
+import { buildSystemPrompt } from './prompt.mjs';
 
 const LEGACY_TASK_STEP_START_EVENT = 'task:step:start';
 const WORKFLOW_STEP_START_EVENT = 'workflow:step:start';
@@ -35,7 +36,15 @@ function coerceInputText(event) {
 }
 
 function defaultBuildMessages(event) {
-  return [{ role: 'user', content: coerceInputText(event) }];
+  return [
+    {
+      role: 'system',
+      content: buildSystemPrompt({
+        step: STEP_START_EVENTS.has(event?.type) ? (event?.content?.step ?? null) : null,
+      }),
+    },
+    { role: 'user', content: coerceInputText(event) },
+  ];
 }
 
 function shouldAttemptTextToolParse(text, finishReason) {
@@ -216,14 +225,10 @@ export class AgentLoop {
       return contextManager;
     }
 
-    return {
-      buildMessages(input) {
-        return {
-          messages: defaultBuildMessages(input.event),
-          maxOutputTokens: maxTokens,
-        };
-      },
-    };
+    return createAgentContext({
+      contextLimit: Math.max(DEFAULT_CONTEXT_LIMIT, maxTokens + 1),
+      outputReserve: maxTokens,
+    });
   }
 
   #getLayerBudget(name) {
