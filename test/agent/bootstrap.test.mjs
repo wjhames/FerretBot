@@ -16,7 +16,7 @@ async function withTempWorkspace(run) {
   }
 }
 
-test('workspace bootstrap manager seeds first-run template and metadata files', async () => {
+test('workspace bootstrap manager seeds prompt files and bootstrap workflow', async () => {
   await withTempWorkspace(async (baseDir) => {
     const workspaceManager = createWorkspaceManager({ baseDir });
     const bootstrap = createWorkspaceBootstrapManager({
@@ -38,6 +38,7 @@ test('workspace bootstrap manager seeds first-run template and metadata files', 
       'MEMORY.system.md',
       '.workspace-templates.json',
       '.bootstrap-state.json',
+      'workflows/bootstrap-init/workflow.yaml',
       'memory/2026-02-15.md',
       'memory/2026-02-14.md',
     ];
@@ -46,34 +47,14 @@ test('workspace bootstrap manager seeds first-run template and metadata files', 
       const exists = await workspaceManager.exists(relativePath);
       assert.equal(exists, true, `expected ${relativePath} to exist`);
     }
+
+    const descriptor = bootstrap.getBootstrapWorkflowDescriptor();
+    assert.equal(descriptor.id, 'bootstrap-init');
+    assert.equal(descriptor.version, '1.0.0');
   });
 });
 
-test('bootstrap requires explicit completion marker before it can complete', async () => {
-  await withTempWorkspace(async (baseDir) => {
-    const workspaceManager = createWorkspaceManager({ baseDir });
-    const bootstrap = createWorkspaceBootstrapManager({
-      workspaceManager,
-      now: () => new Date('2026-02-15T12:00:00.000Z'),
-    });
-
-    await bootstrap.ensureInitialized();
-    await workspaceManager.writeTextFile('IDENTITY.md', 'identity updated');
-    await workspaceManager.writeTextFile('SOUL.md', 'soul updated');
-    await workspaceManager.writeTextFile('USER.md', 'user updated');
-
-    const noMarker = await bootstrap.maybeCompleteBootstrap();
-    assert.equal(noMarker, false);
-    assert.equal(await workspaceManager.exists('BOOTSTRAP.md'), true);
-
-    await workspaceManager.writeTextFile('.bootstrap-complete', '{"status":"complete"}');
-    const withMarker = await bootstrap.maybeCompleteBootstrap();
-    assert.equal(withMarker, true);
-    assert.equal(await workspaceManager.exists('BOOTSTRAP.md'), false);
-  });
-});
-
-test('loadPromptContext exposes bootstrap layer while active and clears it after completion', async () => {
+test('bootstrap state transitions to completed only when marker exists and BOOTSTRAP is removed', async () => {
   await withTempWorkspace(async (baseDir) => {
     const workspaceManager = createWorkspaceManager({ baseDir });
     const bootstrap = createWorkspaceBootstrapManager({
@@ -83,22 +64,22 @@ test('loadPromptContext exposes bootstrap layer while active and clears it after
 
     await bootstrap.ensureInitialized();
 
-    const active = await bootstrap.loadPromptContext();
-    assert.equal(active.bootstrapState.state, 'active');
-    assert.match(active.layers.bootstrap, /Bootstrap mode active/i);
+    const active = await bootstrap.getBootstrapState();
+    assert.equal(active.state, 'active');
+    assert.equal(await bootstrap.shouldRunBootstrapWorkflow(), true);
 
-    await workspaceManager.writeTextFile('IDENTITY.md', 'identity updated');
-    await workspaceManager.writeTextFile('SOUL.md', 'soul updated');
-    await workspaceManager.writeTextFile('USER.md', 'user updated');
     await workspaceManager.writeTextFile('.bootstrap-complete', '{"status":"complete"}');
+    const failed = await bootstrap.getBootstrapState();
+    assert.equal(failed.state, 'failed');
 
-    const completed = await bootstrap.loadPromptContext();
-    assert.equal(completed.bootstrapState.state, 'completed');
-    assert.equal(completed.layers.bootstrap, '');
+    await workspaceManager.removePath('BOOTSTRAP.md');
+    const completed = await bootstrap.getBootstrapState();
+    assert.equal(completed.state, 'completed');
+    assert.equal(await bootstrap.shouldRunBootstrapWorkflow(), false);
   });
 });
 
-test('bootstrap enters failed state when completion marker exists but required files are empty', async () => {
+test('loadPromptContext does not inject bootstrap orchestration text', async () => {
   await withTempWorkspace(async (baseDir) => {
     const workspaceManager = createWorkspaceManager({ baseDir });
     const bootstrap = createWorkspaceBootstrapManager({
@@ -107,12 +88,10 @@ test('bootstrap enters failed state when completion marker exists but required f
     });
 
     await bootstrap.ensureInitialized();
-    await workspaceManager.writeTextFile('IDENTITY.md', '');
-    await workspaceManager.writeTextFile('.bootstrap-complete', '{"status":"complete"}');
 
     const context = await bootstrap.loadPromptContext();
-    assert.equal(context.bootstrapState.state, 'failed');
-    assert.match(context.extraRules, /failed/i);
-    assert.equal(await workspaceManager.exists('BOOTSTRAP.md'), true);
+    assert.equal(context.layers.bootstrap, '');
+    assert.equal(context.extraRules, '');
+    assert.match(context.layers.soul, /Heart of Who You Are/);
   });
 });

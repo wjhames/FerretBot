@@ -95,7 +95,25 @@ test('write tool normalizes mode for common model output variants', async () => 
       mode: 'add',
     });
 
+    await writeTool.execute({
+      path: 'notes/mode.txt',
+      content: 'E',
+      mode: 'APPEND_MODE',
+    });
+
+    await writeTool.execute({
+      path: 'notes/mode.txt',
+      content: 'F',
+      mode: 'w',
+    });
+
+    await writeTool.execute({
+      path: 'notes/mode.txt',
+      content: 'G',
+      mode: 'unknown-model-value',
+    });
+
     const read = await readTool.execute({ path: 'notes/mode.txt' });
-    assert.equal(read.content, 'CD');
+    assert.equal(read.content, 'G');
   });
 });

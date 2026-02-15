@@ -7,6 +7,13 @@ const ALLOWED_WORKFLOW_FIELDS = new Set([
 const ALLOWED_STEP_FIELDS = new Set([
   'id', 'name', 'instruction', 'tools', 'loadSkills', 'dependsOn',
   'successChecks', 'timeout', 'retries', 'approval', 'condition',
+  'type', 'path', 'content', 'mode',
+]);
+const ALLOWED_STEP_TYPES = new Set([
+  'agent',
+  'system_write_file',
+  'system_delete_file',
+  'system_ensure_file',
 ]);
 
 const ALLOWED_INPUT_FIELDS = new Set(['name', 'type', 'required', 'default']);
@@ -148,16 +155,35 @@ export function validateWorkflow(raw) {
       stepErrors.push(`duplicate step id '${stepId}'.`);
     }
 
-    const instruction = normalizeText(rawStep.instruction ?? '');
-    if (!instruction) {
-      stepErrors.push('instruction is required.');
+    const type = normalizeText(rawStep.type || 'agent') || 'agent';
+    if (!ALLOWED_STEP_TYPES.has(type)) {
+      stepErrors.push(`invalid step type '${type}'.`);
     }
+
+    const instruction = normalizeText(rawStep.instruction ?? '');
 
     const tools = Array.isArray(rawStep.tools)
       ? rawStep.tools.map((t) => normalizeText(String(t))).filter((t) => t.length > 0)
       : [];
-    if (tools.length === 0) {
-      stepErrors.push('tools must be a non-empty array.');
+
+    if (type === 'agent') {
+      if (!instruction) {
+        stepErrors.push('instruction is required.');
+      }
+      if (tools.length === 0) {
+        stepErrors.push('tools must be a non-empty array.');
+      }
+    }
+
+    const stepPath = normalizeText(rawStep.path ?? '');
+    if (type !== 'agent' && !stepPath) {
+      stepErrors.push('path is required for system steps.');
+    }
+
+    const content = rawStep.content != null ? String(rawStep.content) : '';
+    const mode = rawStep.mode != null ? normalizeText(String(rawStep.mode)) : null;
+    if (type === 'system_write_file' && !content) {
+      stepErrors.push('content is required for system_write_file steps.');
     }
 
     const loadSkills = Array.isArray(rawStep.loadSkills)
@@ -195,6 +221,7 @@ export function validateWorkflow(raw) {
       normalizedSteps.push({
         id: stepId,
         name: stepName,
+        type,
         instruction,
         tools,
         loadSkills,
@@ -204,6 +231,9 @@ export function validateWorkflow(raw) {
         retries,
         approval,
         condition,
+        path: stepPath || null,
+        content: content || null,
+        mode,
       });
       seenIds.add(stepId);
     }

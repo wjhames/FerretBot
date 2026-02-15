@@ -9,7 +9,7 @@ function normalizeMode(mode) {
   }
 
   if (typeof mode !== 'string') {
-    throw new TypeError("mode must be either 'overwrite' or 'append'.");
+    return 'overwrite';
   }
 
   const normalized = mode.trim().toLowerCase();
@@ -17,15 +17,33 @@ function normalizeMode(mode) {
     return 'overwrite';
   }
 
-  if (normalized === 'overwrite' || normalized === 'write' || normalized === 'replace' || normalized === 'truncate') {
+  const lettersOnly = normalized.replace(/[^a-z]/g, '');
+
+  if (
+    normalized === 'overwrite'
+    || normalized === 'write'
+    || normalized === 'replace'
+    || normalized === 'truncate'
+    || normalized === 'w'
+    || lettersOnly === 'overwrite'
+    || lettersOnly === 'write'
+    || lettersOnly === 'replace'
+    || lettersOnly === 'truncate'
+  ) {
     return 'overwrite';
   }
 
-  if (normalized === 'append' || normalized === 'add') {
+  if (
+    normalized === 'append'
+    || normalized === 'add'
+    || normalized === 'a'
+    || lettersOnly === 'append'
+    || lettersOnly === 'add'
+  ) {
     return 'append';
   }
 
-  throw new TypeError("mode must be either 'overwrite' or 'append'.");
+  return 'overwrite';
 }
 
 export class WriteTool {

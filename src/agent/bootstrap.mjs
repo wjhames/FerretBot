@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-const TEMPLATE_VERSION = 'ferretbot-2026-02-15-v1';
+const TEMPLATE_VERSION = 'ferretbot-2026-02-15-v2';
 
 const DEFAULT_PROMPT_FILES = Object.freeze({
   agents: 'AGENTS.md',
@@ -13,10 +13,16 @@ const DEFAULT_PROMPT_FILES = Object.freeze({
   memory: 'MEMORY.md',
   systemMemory: 'MEMORY.system.md',
   memoryDir: 'memory',
+  workflowsDir: 'workflows',
+  bootstrapWorkflowDir: 'workflows/bootstrap-init',
+  bootstrapWorkflowFile: 'workflows/bootstrap-init/workflow.yaml',
   bootstrapMarker: '.bootstrap-complete',
   bootstrapState: '.bootstrap-state.json',
   templateMeta: '.workspace-templates.json',
 });
+
+const BOOTSTRAP_WORKFLOW_ID = 'bootstrap-init';
+const BOOTSTRAP_WORKFLOW_VERSION = '1.0.0';
 
 const BOOTSTRAP_STATES = Object.freeze({
   PENDING: 'pending',
@@ -25,25 +31,212 @@ const BOOTSTRAP_STATES = Object.freeze({
   FAILED: 'failed',
 });
 
-const REQUIRED_BOOTSTRAP_KEYS = Object.freeze(['identity', 'soul', 'user']);
+const TEMPLATE_AGENTS_DEFAULT = `# AGENTS.md
 
-const TEMPLATE_AGENTS_DEFAULT = `# AGENTS.md\n\nThis file gives baseline guidance to every coding agent in this workspace.\n\n## Project Goal\nDefine the software outcomes you want.\n\n## Constraints\n- Security boundaries\n- Tooling limits\n- Forbidden actions\n\n## Coding Standards\n- Style + formatting rules\n- Test expectations\n- Review quality bar\n\n## Workflow\n- Branch + commit conventions\n- PR/review process\n- Done criteria\n\n## Runtime Context\n- Environment assumptions\n- Critical paths/config\n\n## Agent Notes\n- Where to begin\n- Known pitfalls\n- Escalation guidance\n`;
+This file gives baseline guidance to every coding agent in this workspace.
 
-const TEMPLATE_BOOTSTRAP = `This file controls one-time onboarding.\n\nFollow these steps exactly:\n\n1. Read AGENTS.md.\n2. Update IDENTITY.md with who you are and how you operate.\n3. Update USER.md with what you know about the operator.\n4. Update SOUL.md with enduring values and behavior.\n5. Update BOOT.md if startup behavior should change.\n6. Update MEMORY.md with durable context.\n7. Write a completion marker file at .bootstrap-complete with JSON {"status":"complete"}.\n8. After completion marker exists, remove BOOTSTRAP.md.\n\nIf you cannot finish onboarding, explain why and leave BOOTSTRAP.md in place.\n`;
+## Project Goal
+Define the software outcomes you want.
 
-const TEMPLATE_AGENTS = `# AGENTS.md Template\n\nThe AGENTS.md file tells your agent how to work in this repository.\n\n## Role and priorities\nDefine primary responsibilities and what to optimize for.\n\n## Communication\nExplain preferred tone, brevity, and update cadence.\n\n## Engineering standards\n- Correctness first\n- Clear tradeoffs\n- Small, reviewable changes\n\n## Tool behavior\n- Which tools to use first\n- Validation/testing requirements\n- Safety boundaries\n\n## Collaboration norms\n- Ask when blocked\n- Avoid hidden assumptions\n- Record important decisions\n\n## Proactive behavior\nDescribe when to suggest improvements and when to stay minimal.\n\n## Memory policy\nExplain what belongs in durable memory and what should remain ephemeral.\n\n## Make it yours\nTune to your team's workflow, stack, and risk profile.\n`;
+## Constraints
+- Security boundaries
+- Tooling limits
+- Forbidden actions
 
-const TEMPLATE_IDENTITY = `Who are you?\n\nDescribe your identity as an assistant in this workspace.\n\n## Name\nWhat should the user call you?\n\n## Purpose\nWhat are you for?\n\n## Skills\nWhat are you especially good at?\n\n## Operating style\nHow do you think, communicate, and decide?\n\n## Boundaries\nWhat will you never do?\n`;
+## Coding Standards
+- Style + formatting rules
+- Test expectations
+- Review quality bar
 
-const TEMPLATE_SOUL = `The Heart of Who You Are\n\nThis file describes your lasting values and character.\n\n## Core values\n3-5 principles that guide choices.\n\n## Decision model\nHow you trade off speed, quality, and risk.\n\n## Relationship with the user\nHow you support, challenge, and collaborate.\n\n## Voice\nHow your responses should feel.\n\n## Boundaries\nRed lines and non-negotiables.\n\n## Evolution\nHow this soul should adapt over time while staying coherent.\n`;
+## Workflow
+- Branch + commit conventions
+- PR/review process
+- Done criteria
 
-const TEMPLATE_USER = `Who is the user?\n\nCapture stable facts and collaboration preferences.\n\n## Identity\n- Name\n- Role\n- Context\n\n## Preferences\n- Communication style\n- Technical depth\n- Tooling habits\n\n## Goals\n- Near-term\n- Long-term\n\n## Constraints\n- Time\n- Security/compliance\n- Infrastructure\n\n## Working agreements\n- Do\n- Avoid\n\n## Unknowns\nWhat still needs confirmation.\n`;
+## Runtime Context
+- Environment assumptions
+- Critical paths/config
 
-const TEMPLATE_BOOT = 'Standard session startup procedures, hooks, and checks.';
+## Agent Notes
+- Where to begin
+- Known pitfalls
+- Escalation guidance
+`;
 
-const TEMPLATE_MEMORY = `# MEMORY.md\n\nDurable model-owned memory. Keep concise, factual, and useful.\n`;
+const TEMPLATE_BOOTSTRAP = `This file indicates first-run bootstrap is pending.
 
-const TEMPLATE_SYSTEM_MEMORY = `# MEMORY.system.md\n\nSystem-maintained memory summary. Do not treat this as editable preference storage.\n`;
+Bootstrap is now executed by the workspace workflow \
+\`${DEFAULT_PROMPT_FILES.bootstrapWorkflowFile}\`.
+
+The workflow should gather or initialize operator context and then:
+1. Write \
+\`${DEFAULT_PROMPT_FILES.bootstrapMarker}\` with JSON: {"status":"complete"}
+2. Delete this file (\`${DEFAULT_PROMPT_FILES.bootstrap}\`)
+3. Optionally delete bootstrap workflow files
+`;
+
+const TEMPLATE_AGENTS = `# AGENTS.md Template
+
+The AGENTS.md file tells your agent how to work in this repository.
+
+## Role and priorities
+Define primary responsibilities and what to optimize for.
+
+## Communication
+Explain preferred tone, brevity, and update cadence.
+
+## Engineering standards
+- Correctness first
+- Clear tradeoffs
+- Small, reviewable changes
+
+## Tool behavior
+- Which tools to use first
+- Validation/testing requirements
+- Safety boundaries
+
+## Collaboration norms
+- Ask when blocked
+- Avoid hidden assumptions
+- Record important decisions
+
+## Proactive behavior
+Describe when to suggest improvements and when to stay minimal.
+
+## Memory policy
+Explain what belongs in durable memory and what should remain ephemeral.
+
+## Make it yours
+Tune to your team's workflow, stack, and risk profile.
+`;
+
+const TEMPLATE_IDENTITY = `# IDENTITY.md
+
+## Name
+FerretBot
+
+## Purpose
+Local-first coding partner for this workspace.
+
+## Skills
+Implementation, debugging, refactoring, and workflow execution.
+
+## Operating style
+Pragmatic, concise, and deterministic.
+
+## Boundaries
+No fabricated tool results. No unsafe destructive actions.
+`;
+
+const TEMPLATE_SOUL = `# SOUL.md
+
+The Heart of Who You Are
+
+This file defines your enduring identity and values.
+
+## Core Values
+- Clarity over ambiguity.
+- Truth over convenience.
+- Momentum with quality.
+
+## Decision Style
+- Prefer small, testable changes.
+- Surface tradeoffs explicitly.
+- Favor deterministic workflows for repetitive tasks.
+
+## Collaboration
+- Ask focused questions when needed.
+- Report progress frequently and factually.
+- Keep commitments and close loops.
+
+## Voice
+- Direct, calm, and technically precise.
+- Minimal filler and no hype.
+
+## Boundaries
+- Never invent execution results.
+- Never bypass explicit security constraints.
+
+## Evolution
+Adjust details over time, keep core values stable.
+`;
+
+const TEMPLATE_USER = `# USER.md
+
+## Identity
+- Name:
+- Role:
+- Context:
+
+## Preferences
+- Communication style:
+- Technical depth:
+- Tooling habits:
+
+## Goals
+- Near-term:
+- Long-term:
+
+## Constraints
+- Time:
+- Security/compliance:
+- Infrastructure:
+
+## Working agreements
+- Do:
+- Avoid:
+
+## Unknowns
+- Pending clarifications:
+`;
+
+const TEMPLATE_BOOT = `# BOOT.md
+
+Session startup checklist.
+1. Read AGENTS.md.
+2. Read SOUL.md.
+3. Read USER.md.
+4. Load recent memory files.
+`;
+
+const TEMPLATE_MEMORY = `# MEMORY.md
+
+Durable model-owned memory. Keep concise, factual, and useful.
+`;
+
+const TEMPLATE_SYSTEM_MEMORY = `# MEMORY.system.md
+
+System-maintained memory summary.
+`;
+
+const TEMPLATE_BOOTSTRAP_WORKFLOW = `id: ${BOOTSTRAP_WORKFLOW_ID}
+version: "${BOOTSTRAP_WORKFLOW_VERSION}"
+name: Workspace Bootstrap
+steps:
+  - id: mark-complete
+    type: system_write_file
+    path: ${DEFAULT_PROMPT_FILES.bootstrapMarker}
+    content: |
+      {"status":"complete"}
+  - id: delete-bootstrap-md
+    type: system_delete_file
+    path: ${DEFAULT_PROMPT_FILES.bootstrap}
+    dependsOn: [mark-complete]
+  - id: write-bootstrap-state
+    type: system_write_file
+    path: ${DEFAULT_PROMPT_FILES.bootstrapState}
+    content: |
+      {
+        "state": "completed",
+        "reason": "Bootstrap workflow completed.",
+        "updatedAt": "workflow-managed"
+      }
+    dependsOn: [delete-bootstrap-md]
+  - id: delete-bootstrap-workflow
+    type: system_delete_file
+    path: ${DEFAULT_PROMPT_FILES.bootstrapWorkflowDir}
+    dependsOn: [write-bootstrap-state]
+`;
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -68,39 +261,11 @@ function buildDailyMemoryTemplate(dateText) {
 
 function normalizeFileNames(input = {}) {
   const merged = { ...DEFAULT_PROMPT_FILES, ...input };
-  return {
-    agents: merged.agents,
-    agentsTemplate: merged.agentsTemplate,
-    boot: merged.boot,
-    bootstrap: merged.bootstrap,
-    identity: merged.identity,
-    soul: merged.soul,
-    user: merged.user,
-    memory: merged.memory,
-    systemMemory: merged.systemMemory,
-    memoryDir: merged.memoryDir,
-    bootstrapMarker: merged.bootstrapMarker,
-    bootstrapState: merged.bootstrapState,
-    templateMeta: merged.templateMeta,
-  };
+  return { ...merged };
 }
 
 function digestText(text) {
   return createHash('sha1').update(String(text ?? ''), 'utf8').digest('hex');
-}
-
-function buildTemplates(fileNames) {
-  return {
-    [fileNames.agents]: TEMPLATE_AGENTS_DEFAULT,
-    [fileNames.agentsTemplate]: TEMPLATE_AGENTS,
-    [fileNames.boot]: TEMPLATE_BOOT,
-    [fileNames.bootstrap]: TEMPLATE_BOOTSTRAP,
-    [fileNames.identity]: TEMPLATE_IDENTITY,
-    [fileNames.soul]: TEMPLATE_SOUL,
-    [fileNames.user]: TEMPLATE_USER,
-    [fileNames.memory]: TEMPLATE_MEMORY,
-    [fileNames.systemMemory]: TEMPLATE_SYSTEM_MEMORY,
-  };
 }
 
 function parseJsonSafe(raw = '') {
@@ -157,6 +322,20 @@ export class WorkspaceBootstrapManager {
     this.#templateVersion = options.templateVersion ?? TEMPLATE_VERSION;
   }
 
+  #buildTemplates() {
+    return {
+      [this.#fileNames.agents]: TEMPLATE_AGENTS_DEFAULT,
+      [this.#fileNames.agentsTemplate]: TEMPLATE_AGENTS,
+      [this.#fileNames.boot]: TEMPLATE_BOOT,
+      [this.#fileNames.bootstrap]: TEMPLATE_BOOTSTRAP,
+      [this.#fileNames.identity]: TEMPLATE_IDENTITY,
+      [this.#fileNames.soul]: TEMPLATE_SOUL,
+      [this.#fileNames.user]: TEMPLATE_USER,
+      [this.#fileNames.memory]: TEMPLATE_MEMORY,
+      [this.#fileNames.systemMemory]: TEMPLATE_SYSTEM_MEMORY,
+    };
+  }
+
   async #readTemplateMeta() {
     const raw = await this.#workspaceManager.readTextFile(this.#fileNames.templateMeta);
     const parsed = parseJsonSafe(raw);
@@ -181,8 +360,24 @@ export class WorkspaceBootstrapManager {
     await this.#workspaceManager.writeTextFile(this.#fileNames.templateMeta, JSON.stringify(payload, null, 2));
   }
 
+  async #ensureBootstrapWorkflowSeeded() {
+    const state = await this.getBootstrapState();
+    const workflowExists = await this.#workspaceManager.exists(this.#fileNames.bootstrapWorkflowFile);
+
+    if (state.state === BOOTSTRAP_STATES.COMPLETED) {
+      return;
+    }
+
+    if (!workflowExists) {
+      await this.#workspaceManager.ensureTextFile(
+        this.#fileNames.bootstrapWorkflowFile,
+        TEMPLATE_BOOTSTRAP_WORKFLOW,
+      );
+    }
+  }
+
   async #ensureTemplates() {
-    const templates = buildTemplates(this.#fileNames);
+    const templates = this.#buildTemplates();
     const priorMeta = await this.#readTemplateMeta();
 
     for (const [fileName, template] of Object.entries(templates)) {
@@ -192,20 +387,6 @@ export class WorkspaceBootstrapManager {
     if (!priorMeta || priorMeta.version !== this.#templateVersion) {
       await this.#writeTemplateMeta(templates);
     }
-  }
-
-  async #readBootstrapState() {
-    const raw = await this.#workspaceManager.readTextFile(this.#fileNames.bootstrapState);
-    const parsed = parseJsonSafe(raw);
-    if (!parsed || typeof parsed !== 'object') {
-      return buildDefaultBootstrapState();
-    }
-
-    return {
-      state: typeof parsed.state === 'string' ? parsed.state : BOOTSTRAP_STATES.PENDING,
-      updatedAt: parsed.updatedAt ?? null,
-      reason: typeof parsed.reason === 'string' ? parsed.reason : '',
-    };
   }
 
   async #writeBootstrapState(state, reason = '') {
@@ -223,39 +404,22 @@ export class WorkspaceBootstrapManager {
     return payload;
   }
 
-  async #requiredBootstrapFilesReady() {
-    for (const key of REQUIRED_BOOTSTRAP_KEYS) {
-      const fileName = this.#fileNames[key];
-      const content = await this.#workspaceManager.readTextFile(fileName);
-      if (!normalizeText(content)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  async #resolveBootstrapState() {
+  async getBootstrapState() {
     const bootstrapText = await this.#workspaceManager.readTextFile(this.#fileNames.bootstrap);
     const bootstrapExists = normalizeText(bootstrapText).length > 0;
 
     const markerText = await this.#workspaceManager.readTextFile(this.#fileNames.bootstrapMarker);
     const hasCompletionMarker = parseCompletionMarker(markerText);
 
-    if (hasCompletionMarker) {
-      const ready = await this.#requiredBootstrapFilesReady();
-      if (!ready) {
-        return this.#writeBootstrapState(
-          BOOTSTRAP_STATES.FAILED,
-          'Completion marker exists but required bootstrap files are incomplete.',
-        );
-      }
-
-      if (bootstrapExists) {
-        await this.#workspaceManager.removePath(this.#fileNames.bootstrap);
-      }
-
+    if (hasCompletionMarker && !bootstrapExists) {
       return this.#writeBootstrapState(BOOTSTRAP_STATES.COMPLETED, 'Bootstrap completed.');
+    }
+
+    if (hasCompletionMarker && bootstrapExists) {
+      return this.#writeBootstrapState(
+        BOOTSTRAP_STATES.FAILED,
+        'Completion marker exists but BOOTSTRAP.md still present.',
+      );
     }
 
     if (bootstrapExists) {
@@ -263,6 +427,12 @@ export class WorkspaceBootstrapManager {
     }
 
     return this.#writeBootstrapState(BOOTSTRAP_STATES.PENDING, 'Bootstrap pending marker.');
+  }
+
+  async shouldRunBootstrapWorkflow() {
+    await this.ensureInitialized();
+    const state = await this.getBootstrapState();
+    return state.state === BOOTSTRAP_STATES.ACTIVE;
   }
 
   async ensureInitialized() {
@@ -286,21 +456,18 @@ export class WorkspaceBootstrapManager {
       buildDailyMemoryTemplate(yesterdayStamp),
     );
 
-    await this.#resolveBootstrapState();
-    this.#initialized = true;
-  }
+    await this.#workspaceManager.ensureTextFile(
+      `${this.#fileNames.workflowsDir}/.keep`,
+      '',
+    );
 
-  async maybeCompleteBootstrap() {
-    await this.ensureInitialized();
-    const previous = await this.#readBootstrapState();
-    const next = await this.#resolveBootstrapState();
-    return previous.state !== BOOTSTRAP_STATES.COMPLETED
-      && next.state === BOOTSTRAP_STATES.COMPLETED;
+    await this.#ensureBootstrapWorkflowSeeded();
+    await this.getBootstrapState();
+    this.#initialized = true;
   }
 
   async loadPromptContext() {
     await this.ensureInitialized();
-    const bootstrapState = await this.#resolveBootstrapState();
 
     const now = this.#now();
     const todayStamp = formatDateSegment(now);
@@ -314,7 +481,6 @@ export class WorkspaceBootstrapManager {
       user,
       memory,
       systemMemory,
-      bootstrap,
       todayMemory,
       yesterdayMemory,
     ] = await Promise.all([
@@ -325,7 +491,6 @@ export class WorkspaceBootstrapManager {
       this.#workspaceManager.readTextFile(this.#fileNames.user),
       this.#workspaceManager.readTextFile(this.#fileNames.memory),
       this.#workspaceManager.readTextFile(this.#fileNames.systemMemory),
-      this.#workspaceManager.readTextFile(this.#fileNames.bootstrap),
       this.#workspaceManager.readTextFile(`${this.#fileNames.memoryDir}/${todayStamp}.md`),
       this.#workspaceManager.readTextFile(`${this.#fileNames.memoryDir}/${yesterdayStamp}.md`),
     ]);
@@ -347,23 +512,17 @@ export class WorkspaceBootstrapManager {
       bootstrap: '',
     };
 
-    if (bootstrapState.state === BOOTSTRAP_STATES.ACTIVE || bootstrapState.state === BOOTSTRAP_STATES.FAILED) {
-      layers.bootstrap = [
-        'Bootstrap mode active.',
-        `Write ${this.#fileNames.bootstrapMarker} with JSON {"status":"complete"} when onboarding is done.`,
-        `Then remove ${this.#fileNames.bootstrap}.`,
-        normalizeText(bootstrap) ? `${this.#fileNames.bootstrap}:\n${bootstrap.trim()}` : '',
-      ].filter((part) => part.length > 0).join('\n\n');
-    }
-
-    const extraRules = bootstrapState.state === BOOTSTRAP_STATES.FAILED
-      ? `Bootstrap state is failed: ${bootstrapState.reason}`
-      : '';
-
     return {
-      bootstrapState,
-      extraRules,
+      bootstrapState: await this.getBootstrapState(),
+      extraRules: '',
       layers,
+    };
+  }
+
+  getBootstrapWorkflowDescriptor() {
+    return {
+      id: BOOTSTRAP_WORKFLOW_ID,
+      version: BOOTSTRAP_WORKFLOW_VERSION,
     };
   }
 }
@@ -374,3 +533,4 @@ export function createWorkspaceBootstrapManager(options) {
 
 export const WORKSPACE_TEMPLATE_VERSION = TEMPLATE_VERSION;
 export const WORKSPACE_DEFAULT_PROMPT_FILES = DEFAULT_PROMPT_FILES;
+export const WORKSPACE_BOOTSTRAP_WORKFLOW_ID = BOOTSTRAP_WORKFLOW_ID;

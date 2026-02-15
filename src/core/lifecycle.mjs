@@ -89,6 +89,14 @@ function defaultCreateSkillLoader({ config = {} }) {
   });
 }
 
+function defaultCreateWorkflowRegistry({ config = {}, workspaceManager } = {}) {
+  const baseDir = config.workflows?.rootDir
+    ?? (workspaceManager && typeof workspaceManager.resolve === 'function'
+      ? workspaceManager.resolve('workflows')
+      : undefined);
+  return createWorkflowRegistry({ baseDir });
+}
+
 function defaultCreateSessionMemory({ config = {} }) {
   return createSessionMemory({
     baseDir: config.memory?.sessionsDir ?? config.session?.storageDir,
@@ -156,8 +164,8 @@ export class AgentLifecycle {
     this.#createToolRegistry = options.createToolRegistry ?? defaultCreateToolRegistry;
     this.#createAgentLoop = options.createAgentLoop ?? ((deps) => createAgentLoop(deps));
     this.#createIpcServer = options.createIpcServer ?? defaultCreateIpcServer;
-    this.#createWorkflowRegistry = options.createWorkflowRegistry ?? (({ config }) => createWorkflowRegistry({ baseDir: config.workflows?.rootDir }));
-    this.#createWorkflowEngine = options.createWorkflowEngine ?? (({ bus, registry, config }) => createWorkflowEngine({ bus, registry, storageDir: config.workflows?.runsDir }));
+    this.#createWorkflowRegistry = options.createWorkflowRegistry ?? defaultCreateWorkflowRegistry;
+    this.#createWorkflowEngine = options.createWorkflowEngine ?? (({ bus, registry, config, workspaceManager }) => createWorkflowEngine({ bus, registry, storageDir: config.workflows?.runsDir, workspaceManager }));
     this.#createSkillLoader = options.createSkillLoader ?? defaultCreateSkillLoader;
     this.#createSessionMemory = options.createSessionMemory ?? defaultCreateSessionMemory;
     this.#createWorkspaceManager = options.createWorkspaceManager ?? defaultCreateWorkspaceManager;
@@ -183,10 +191,6 @@ export class AgentLifecycle {
     const providerCapabilities = await discoverProviderCapabilities(provider);
     const parser = this.#createParser(config);
 
-    const workflowRegistry = this.#createWorkflowRegistry({ config });
-    await workflowRegistry.loadAll();
-    const workflowEngine = this.#createWorkflowEngine({ bus, registry: workflowRegistry, config });
-    workflowEngine.start();
     const skillLoader = this.#createSkillLoader({ config });
     const sessionMemory = this.#createSessionMemory({ config });
     const workspaceManager = this.#createWorkspaceManager({ config });
@@ -200,6 +204,10 @@ export class AgentLifecycle {
     if (workspaceBootstrap && typeof workspaceBootstrap.ensureInitialized === 'function') {
       await workspaceBootstrap.ensureInitialized();
     }
+    const workflowRegistry = this.#createWorkflowRegistry({ config, workspaceManager });
+    await workflowRegistry.loadAll();
+    const workflowEngine = this.#createWorkflowEngine({ bus, registry: workflowRegistry, config, workspaceManager });
+    workflowEngine.start();
 
     const toolRegistry = this.#createToolRegistry({
       config,
@@ -244,6 +252,25 @@ export class AgentLifecycle {
     }
     if (typeof scheduler.start === 'function') {
       await scheduler.start();
+    }
+
+    if (
+      workspaceBootstrap
+      && typeof workspaceBootstrap.shouldRunBootstrapWorkflow === 'function'
+      && typeof workspaceBootstrap.getBootstrapWorkflowDescriptor === 'function'
+    ) {
+      const shouldRunBootstrap = await workspaceBootstrap.shouldRunBootstrapWorkflow();
+      if (shouldRunBootstrap) {
+        const workflowDescriptor = workspaceBootstrap.getBootstrapWorkflowDescriptor();
+        const existingRun = workflowEngine.listRuns().find((run) =>
+          run.workflowId === workflowDescriptor.id
+          && (run.state === 'queued' || run.state === 'running' || run.state === 'waiting_approval'),
+        );
+
+        if (!existingRun && workflowRegistry.get(workflowDescriptor.id, workflowDescriptor.version)) {
+          await workflowEngine.startRun(workflowDescriptor.id, {}, { version: workflowDescriptor.version });
+        }
+      }
     }
 
     this.#runtime = {

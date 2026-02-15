@@ -231,6 +231,17 @@ export class AgentLoop {
         return;
       }
 
+      if (
+        event.type === WORKFLOW_STEP_START_EVENT
+        && event?.content?.step
+        && typeof event.content.step === 'object'
+      ) {
+        const stepType = String(event.content.step.type ?? 'agent');
+        if (stepType !== 'agent') {
+          return;
+        }
+      }
+
       await this.#handleEvent(event);
     });
   }
@@ -462,31 +473,6 @@ export class AgentLoop {
       };
     } catch {
       return { extraRules: '', layers: {} };
-    }
-  }
-
-  async #maybeCompleteBootstrap(event) {
-    if (!this.#workspaceBootstrap || typeof this.#workspaceBootstrap.maybeCompleteBootstrap !== 'function') {
-      return;
-    }
-
-    try {
-      const completed = await this.#workspaceBootstrap.maybeCompleteBootstrap();
-      if (!completed) {
-        return;
-      }
-
-      this.#queueEmit({
-        type: 'agent:status',
-        channel: event.channel,
-        sessionId: event.sessionId,
-        content: {
-          phase: 'bootstrap:complete',
-          text: 'Bootstrap complete. BOOTSTRAP.md removed.',
-        },
-      });
-    } catch {
-      // Bootstrap completion is best-effort and must not block loop execution.
     }
   }
 
@@ -828,7 +814,6 @@ export class AgentLoop {
       arguments: parsedToolCall.arguments,
       event,
     });
-    await this.#maybeCompleteBootstrap(event);
     await this.#appendSessionTurn(event.sessionId, {
       role: 'assistant',
       type: 'tool_call',

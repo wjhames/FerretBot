@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WorkflowEngine, createWorkflowEngine } from '../../src/workflows/engine.mjs';
+import { createWorkspaceManager } from '../../src/memory/workspace.mjs';
 
 async function withTempDir(run) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ferretbot-engine-'));
@@ -341,6 +342,67 @@ test('persists run state to disk', async () => {
 
     const content = JSON.parse(await fs.readFile(path.join(storageDir, `run-${run.id}.json`), 'utf8'));
     assert.equal(content.workflowId, 'test-wf');
+
+    engine.stop();
+  });
+});
+
+test('system workflow steps execute without agent loop and complete run', async () => {
+  await withTempDir(async (storageDir) => {
+    const workspaceDir = path.join(storageDir, 'workspace');
+    const workspaceManager = createWorkspaceManager({ baseDir: workspaceDir });
+    await workspaceManager.ensureWorkspace();
+
+    const bus = new FakeBus();
+    const wf = makeWorkflow({
+      id: 'system-wf',
+      steps: [
+        {
+          id: 'write',
+          name: 'write',
+          type: 'system_write_file',
+          instruction: '',
+          path: 'out.txt',
+          content: 'hello',
+          tools: [],
+          loadSkills: [],
+          dependsOn: [],
+          successChecks: [],
+          timeout: null,
+          retries: 0,
+          approval: false,
+          condition: null,
+        },
+        {
+          id: 'delete',
+          name: 'delete',
+          type: 'system_delete_file',
+          instruction: '',
+          path: 'out.txt',
+          content: null,
+          tools: [],
+          loadSkills: [],
+          dependsOn: ['write'],
+          successChecks: [],
+          timeout: null,
+          retries: 0,
+          approval: false,
+          condition: null,
+        },
+      ],
+    });
+    const registry = makeRegistry([wf]);
+    const engine = createWorkflowEngine({ bus, registry, storageDir, workspaceManager });
+    engine.start();
+
+    const run = await engine.startRun('system-wf');
+    assert.equal(run.state, 'completed');
+    assert.equal(run.steps[0].state, 'completed');
+    assert.equal(run.steps[1].state, 'completed');
+
+    const exists = await workspaceManager.exists('out.txt');
+    assert.equal(exists, false);
+    assert.ok(bus.eventsOfType('workflow:run:complete').some((event) => event.content?.state === 'completed'));
 
     engine.stop();
   });

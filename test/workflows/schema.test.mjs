@@ -151,6 +151,29 @@ test('requires tools per step', () => {
   assert.ok(result.errors.some((e) => e.includes('tools must be a non-empty array')));
 });
 
+test('allows system_write_file step without tools and validates path/content', () => {
+  const result = validateWorkflow(minimalWorkflow({
+    steps: [{ id: 'a', type: 'system_write_file', path: 'x.txt', content: 'hello' }],
+  }));
+  assert.equal(result.valid, true);
+  assert.equal(result.workflow.steps[0].type, 'system_write_file');
+  assert.equal(result.workflow.steps[0].tools.length, 0);
+});
+
+test('rejects invalid system step definitions', () => {
+  const missingPath = validateWorkflow(minimalWorkflow({
+    steps: [{ id: 'a', type: 'system_delete_file' }],
+  }));
+  assert.equal(missingPath.valid, false);
+  assert.ok(missingPath.errors.some((e) => e.includes('path is required for system steps')));
+
+  const missingContent = validateWorkflow(minimalWorkflow({
+    steps: [{ id: 'a', type: 'system_write_file', path: 'x.txt' }],
+  }));
+  assert.equal(missingContent.valid, false);
+  assert.ok(missingContent.errors.some((e) => e.includes('content is required for system_write_file')));
+});
+
 test('requires step instruction', () => {
   const result = validateWorkflow(minimalWorkflow({
     steps: [{ id: 'a', tools: ['bash'] }],

@@ -54,13 +54,14 @@ export class WorkflowEngine {
   #bus;
   #registry;
   #storageDir;
+  #workspaceManager;
   #runs = new Map();
   #storageReady = false;
   #nextId = 1;
   #unsubscribes = [];
 
   constructor(options = {}) {
-    const { bus, registry, storageDir = DEFAULT_RUNS_DIR } = options;
+    const { bus, registry, storageDir = DEFAULT_RUNS_DIR, workspaceManager = null } = options;
 
     if (!bus || typeof bus.on !== 'function' || typeof bus.emit !== 'function') {
       throw new TypeError('WorkflowEngine requires a bus with on/emit methods.');
@@ -73,6 +74,7 @@ export class WorkflowEngine {
     this.#bus = bus;
     this.#registry = registry;
     this.#storageDir = storageDir;
+    this.#workspaceManager = workspaceManager;
   }
 
   start() {
@@ -167,41 +169,14 @@ export class WorkflowEngine {
     if (!runStep || runStep.state !== STEP_STATE.active) return;
 
     const workflowStep = workflow.steps.find((s) => s.id === stepId);
-    const checks = workflowStep?.successChecks ?? [];
-
-    const checkResult = await evaluateChecks(checks, {
-      stepOutput: result,
+    await this.#completeActiveStep({
+      run,
+      runStep,
+      workflowStep,
+      result,
       toolResults: [],
-      workflowInputs: run.args,
-      stepResults: this.#buildStepResults(run),
+      emitStepCompleteEvent: false,
     });
-
-    runStep.checkResults = checkResult.results;
-
-    if (checkResult.passed) {
-      runStep.state = STEP_STATE.completed;
-      runStep.result = result;
-      runStep.completedAt = formatIsoNow();
-      run.updatedAt = formatIsoNow();
-      await this.#persistRun(run);
-      await this.#advance(run);
-    } else if (runStep.retryCount < (workflowStep?.retries ?? 0)) {
-      runStep.retryCount += 1;
-      runStep.state = STEP_STATE.pending;
-      run.updatedAt = formatIsoNow();
-      await this.#persistRun(run);
-      await this.#advance(run);
-    } else {
-      runStep.state = STEP_STATE.failed;
-      runStep.completedAt = formatIsoNow();
-      run.state = RUN_STATE.failed;
-      run.updatedAt = formatIsoNow();
-      await this.#persistRun(run);
-      await this.#bus.emit({
-        type: 'workflow:run:complete',
-        content: { runId: run.id, workflowId: run.workflowId, state: RUN_STATE.failed },
-      });
-    }
   }
 
   async #advance(run) {
@@ -258,12 +233,131 @@ export class WorkflowEngine {
         workflowDir: workflow.dir ?? null,
         step: {
           id: workflowStep.id,
+          type: workflowStep.type ?? 'agent',
           instruction: workflowStep.instruction,
           tools: [...workflowStep.tools],
           loadSkills: [...(workflowStep.loadSkills ?? [])],
           total: workflow.steps.length,
         },
       },
+    });
+
+    if (String(workflowStep?.type ?? 'agent') !== 'agent') {
+      await this.#executeSystemStep(run, workflowStep, nextStep);
+    }
+  }
+
+  async #executeSystemStep(run, workflowStep, runStep) {
+    let result = '';
+    let failedReason = '';
+
+    try {
+      const type = String(workflowStep?.type ?? '');
+      const stepPath = workflowStep?.path;
+      const content = workflowStep?.content ?? '';
+
+      if (!this.#workspaceManager) {
+        throw new Error('workspaceManager is required for system workflow steps.');
+      }
+
+      if (type === 'system_write_file') {
+        await this.#workspaceManager.writeTextFile(stepPath, String(content));
+        result = `Wrote ${stepPath}`;
+      } else if (type === 'system_ensure_file') {
+        await this.#workspaceManager.ensureTextFile(stepPath, String(content));
+        result = `Ensured ${stepPath}`;
+      } else if (type === 'system_delete_file') {
+        await this.#workspaceManager.removePath(stepPath);
+        result = `Deleted ${stepPath}`;
+      } else {
+        throw new Error(`Unsupported system step type '${type}'.`);
+      }
+    } catch (error) {
+      failedReason = error?.message ?? String(error);
+    }
+
+    if (failedReason) {
+      runStep.state = STEP_STATE.failed;
+      runStep.result = failedReason;
+      runStep.completedAt = formatIsoNow();
+      run.state = RUN_STATE.failed;
+      run.updatedAt = formatIsoNow();
+      await this.#persistRun(run);
+      await this.#bus.emit({
+        type: 'workflow:run:complete',
+        content: { runId: run.id, workflowId: run.workflowId, state: RUN_STATE.failed },
+      });
+      return;
+    }
+
+    await this.#completeActiveStep({
+      run,
+      runStep,
+      workflowStep,
+      result,
+      toolResults: [],
+      emitStepCompleteEvent: true,
+    });
+  }
+
+  async #completeActiveStep({
+    run,
+    runStep,
+    workflowStep,
+    result,
+    toolResults = [],
+    emitStepCompleteEvent = false,
+  }) {
+    const checks = workflowStep?.successChecks ?? [];
+
+    const checkResult = await evaluateChecks(checks, {
+      stepOutput: result,
+      toolResults,
+      workflowInputs: run.args,
+      stepResults: this.#buildStepResults(run),
+    });
+
+    runStep.checkResults = checkResult.results;
+
+    if (checkResult.passed) {
+      runStep.state = STEP_STATE.completed;
+      runStep.result = result;
+      runStep.completedAt = formatIsoNow();
+      run.updatedAt = formatIsoNow();
+      await this.#persistRun(run);
+
+      if (emitStepCompleteEvent) {
+        await this.#bus.emit({
+          type: 'workflow:step:complete',
+          content: {
+            runId: run.id,
+            stepId: runStep.id,
+            result,
+          },
+        });
+      }
+
+      await this.#advance(run);
+      return;
+    }
+
+    if (runStep.retryCount < (workflowStep?.retries ?? 0)) {
+      runStep.retryCount += 1;
+      runStep.state = STEP_STATE.pending;
+      run.updatedAt = formatIsoNow();
+      await this.#persistRun(run);
+      await this.#advance(run);
+      return;
+    }
+
+    runStep.state = STEP_STATE.failed;
+    runStep.completedAt = formatIsoNow();
+    run.state = RUN_STATE.failed;
+    run.updatedAt = formatIsoNow();
+    await this.#persistRun(run);
+    await this.#bus.emit({
+      type: 'workflow:run:complete',
+      content: { runId: run.id, workflowId: run.workflowId, state: RUN_STATE.failed },
     });
   }
 
