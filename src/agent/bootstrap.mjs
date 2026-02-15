@@ -237,6 +237,41 @@ steps:
     prompt: "Pick a signature emoji for me."
     responseKey: assistant_emoji
     dependsOn: [ask-vibe]
+  - id: ask-user-address
+    type: wait_for_input
+    prompt: "How should I address you in conversation?"
+    responseKey: user_address
+    dependsOn: [ask-emoji]
+  - id: ask-user-timezone
+    type: wait_for_input
+    prompt: "What timezone are you in?"
+    responseKey: user_timezone
+    dependsOn: [ask-user-address]
+  - id: ask-user-notes
+    type: wait_for_input
+    prompt: "Any notes about how you want me to help day-to-day?"
+    responseKey: user_notes
+    dependsOn: [ask-user-timezone]
+  - id: ask-soul-matters
+    type: wait_for_input
+    prompt: "Before we fill SOUL.md: what matters most to you when we work together?"
+    responseKey: soul_matters
+    dependsOn: [ask-user-notes]
+  - id: ask-soul-behavior
+    type: wait_for_input
+    prompt: "How do you want me to behave? If you're stuck, I can suggest: concise, candid, warm, or strict."
+    responseKey: soul_behavior
+    dependsOn: [ask-soul-matters]
+  - id: ask-soul-boundaries
+    type: wait_for_input
+    prompt: "Any boundaries or preferences I should always respect?"
+    responseKey: soul_boundaries
+    dependsOn: [ask-soul-behavior]
+  - id: ask-connect
+    type: wait_for_input
+    prompt: "Optional: how should you reach me? just-here, whatsapp, telegram."
+    responseKey: connect_preference
+    dependsOn: [ask-soul-boundaries]
   - id: write-user
     type: system_write_file
     path: USER.md
@@ -245,6 +280,8 @@ steps:
 
       ## Identity
       - Name: {{args.user_name}}
+      - Preferred address: {{args.user_address}}
+      - Timezone: {{args.user_timezone}}
       - Role:
       - Context:
 
@@ -267,8 +304,9 @@ steps:
       - Avoid:
 
       ## Unknowns
-      - Pending clarifications:
-    dependsOn: [ask-emoji]
+      - Notes: {{args.user_notes}}
+      - Connect preference: {{args.connect_preference}}
+    dependsOn: [ask-connect]
   - id: write-identity
     type: system_write_file
     path: IDENTITY.md
@@ -298,13 +336,37 @@ steps:
 
       ## Boundaries
       No fabricated tool results. No unsafe destructive actions.
-    dependsOn: [ask-emoji]
+    dependsOn: [ask-connect]
+  - id: write-soul
+    type: system_write_file
+    path: SOUL.md
+    content: |
+      # SOUL.md
+
+      The Heart of Who You Are
+
+      ## Core Values
+      - {{args.soul_matters}}
+      - Truth over convenience
+      - Momentum with quality
+
+      ## Decision Style
+      - {{args.soul_behavior}}
+      - Prefer small, testable changes
+
+      ## Collaboration
+      - Keep commitments and close loops
+      - Report progress frequently
+
+      ## Boundaries
+      - {{args.soul_boundaries}}
+    dependsOn: [ask-connect]
   - id: mark-complete
     type: system_write_file
     path: ${DEFAULT_PROMPT_FILES.bootstrapMarker}
     content: |
       {"status":"complete"}
-    dependsOn: [write-user, write-identity]
+    dependsOn: [write-user, write-identity, write-soul]
   - id: delete-bootstrap-md
     type: system_delete_file
     path: ${DEFAULT_PROMPT_FILES.bootstrap}
