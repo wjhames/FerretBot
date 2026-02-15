@@ -114,14 +114,14 @@ export class WorkflowEngine {
     if (this.#unsubscribes.length > 0) return;
 
     this.#unsubscribes.push(
-      this.#bus.on('workflow:step:complete', (event) =>
-        this.#handleStepComplete(event),
-      ),
+      this.#bus.on('workflow:step:complete', (event) => {
+        void this.#handleStepComplete(event);
+      }),
     );
     this.#unsubscribes.push(
-      this.#bus.on('user:input', (event) =>
-        this.#handleUserInput(event),
-      ),
+      this.#bus.on('user:input', (event) => {
+        void this.#handleUserInput(event);
+      }),
     );
   }
 

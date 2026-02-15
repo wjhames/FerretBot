@@ -16,6 +16,17 @@ async function withTempDir(run) {
   }
 }
 
+async function waitFor(predicate, { timeoutMs = 800, intervalMs = 10 } = {}) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await Promise.resolve(predicate())) {
+      return;
+    }
+    await delay(intervalMs);
+  }
+  throw new Error('Timed out waiting for condition.');
+}
+
 class FakeBus {
   #handlers = new Map();
   events = [];
@@ -132,6 +143,7 @@ test('completing a step advances to next and completes the run', async () => {
       content: { runId: run.id, stepId: 's1', result: 'done step 1' },
     });
 
+    await waitFor(() => bus.eventsOfType('workflow:step:start').length >= 2);
     assert.ok(bus.eventsOfType('workflow:step:start').length >= 2);
     const secondStart = bus.eventsOfType('workflow:step:start')[1];
     assert.equal(secondStart.content.step.id, 's2');
@@ -141,6 +153,8 @@ test('completing a step advances to next and completes the run', async () => {
       content: { runId: run.id, stepId: 's2', result: 'done step 2' },
     });
 
+    await waitFor(() => run.state === 'completed');
+    await waitFor(() => bus.eventsOfType('workflow:run:complete').length > 0);
     const completeEvents = bus.eventsOfType('workflow:run:complete');
     assert.ok(completeEvents.length > 0);
     assert.equal(completeEvents[0].content.state, 'completed');
@@ -197,6 +211,7 @@ test('successChecks failure retries up to limit then fails the run', async () =>
       content: { runId: run.id, stepId: 's1', result: 'FAILURE' },
     });
 
+    await waitFor(() => bus.eventsOfType('workflow:step:start').length >= 2);
     const startsAfterRetry = bus.eventsOfType('workflow:step:start');
     assert.equal(startsAfterRetry.length, 2);
 
@@ -205,6 +220,8 @@ test('successChecks failure retries up to limit then fails the run', async () =>
       content: { runId: run.id, stepId: 's1', result: 'FAILURE again' },
     });
 
+    await waitFor(() => run.state === 'failed');
+    await waitFor(() => bus.eventsOfType('workflow:run:complete').some((e) => e.content.state === 'failed'));
     assert.equal(run.state, 'failed');
     const completeEvents = bus.eventsOfType('workflow:run:complete');
     assert.ok(completeEvents.some((e) => e.content.state === 'failed'));
@@ -237,11 +254,13 @@ test('successChecks pass after retry', async () => {
       content: { runId: run.id, stepId: 's1', result: 'nope' },
     });
 
+    await waitFor(() => bus.eventsOfType('workflow:step:start').length >= 2);
     await bus.emit({
       type: 'workflow:step:complete',
       content: { runId: run.id, stepId: 's1', result: 'SUCCESS here' },
     });
 
+    await waitFor(() => run.state === 'completed');
     assert.equal(run.state, 'completed');
     engine.stop();
   });
@@ -487,6 +506,7 @@ test('wait_for_input steps pause run, capture user input, and continue', async (
       content: { text: 'Morgan' },
     });
 
+    await waitFor(() => run.state === 'completed');
     assert.equal(run.state, 'completed');
     assert.equal(run.args.user_name, 'Morgan');
     assert.equal(await workspaceManager.readTextFile('name.txt'), 'Morgan');
