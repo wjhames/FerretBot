@@ -13,6 +13,7 @@ test('context build enforces input budget and assembles deterministic layers', (
   const context = createAgentContext({
     contextLimit: 900,
     outputReserve: 120,
+    completionSafetyBuffer: 16,
     layerBudgets: {
       system: 280,
       step: 120,
@@ -41,7 +42,8 @@ test('context build enforces input budget and assembles deterministic layers', (
   });
 
   assert.ok(result.messages.length > 0);
-  assert.equal(result.maxOutputTokens, 120);
+  assert.ok(result.maxOutputTokens > 120);
+  assert.ok(result.maxOutputTokens <= 900);
   assert.ok(result.tokenUsage.usedInputTokens > 0);
   assert.ok(result.tokenUsage.layers.system > 0);
   assert.ok(result.tokenUsage.layers.conversation <= 120);
@@ -56,6 +58,24 @@ test('context build enforces input budget and assembles deterministic layers', (
 
   assert.match(systemJoined, /Tool call format:/);
   assert.match(systemJoined, /Step 1: Bootstrap project/);
+});
+
+test('dynamic output budget scales up when input usage is low', () => {
+  const context = createAgentContext({
+    contextLimit: 8_192,
+    outputReserve: 1_024,
+    completionSafetyBuffer: 32,
+  });
+
+  const result = context.buildMessages({
+    userInput: 'short prompt',
+    conversation: [],
+    priorSteps: [],
+    skillContent: '',
+  });
+
+  assert.ok(result.maxOutputTokens > 1_024);
+  assert.equal(result.maxOutputTokens, 8_192 - result.tokenUsage.usedInputTokens - 32);
 });
 
 test('helper functions provide stable token and compaction behavior', () => {

@@ -41,6 +41,7 @@ const DEFAULT_TOKEN_ESTIMATOR_CONFIG = Object.freeze({
   charsPerToken: 4,
   safetyMargin: 1.1,
 });
+const DEFAULT_COMPLETION_SAFETY_BUFFER = 32;
 
 function normalizeBudgetValue(value, fallback) {
   if (!Number.isFinite(value)) {
@@ -324,6 +325,7 @@ export class AgentContext {
   #outputReserve;
   #layerBudgets;
   #tokenEstimatorConfig;
+  #completionSafetyBuffer;
 
   constructor(options = {}) {
     this.#contextLimit = options.contextLimit ?? DEFAULT_CONTEXT_LIMIT;
@@ -334,6 +336,9 @@ export class AgentContext {
       ...DEFAULT_TOKEN_ESTIMATOR_CONFIG,
       ...(options.tokenEstimatorConfig ?? {}),
     };
+    this.#completionSafetyBuffer = Number.isFinite(options.completionSafetyBuffer)
+      ? Math.max(0, Math.floor(options.completionSafetyBuffer))
+      : DEFAULT_COMPLETION_SAFETY_BUFFER;
 
     if (this.#outputReserve >= this.#contextLimit) {
       throw new TypeError('outputReserve must be smaller than contextLimit.');
@@ -409,10 +414,13 @@ export class AgentContext {
       tokenUsage.layers.userInput = 0;
     }
 
+    const remainingForOutput = this.#contextLimit - tokenUsage.usedInputTokens - this.#completionSafetyBuffer;
+    const dynamicOutputBudget = Math.max(1, Math.floor(remainingForOutput));
+
     return {
       messages,
       tokenUsage,
-      maxOutputTokens: this.#outputReserve,
+      maxOutputTokens: dynamicOutputBudget,
     };
   }
 }
