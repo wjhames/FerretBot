@@ -7,6 +7,7 @@ const DEFAULT_ALLOWED_EVENT_TYPES = [
   'workflow:step:start',
   'workflow:step:complete',
   'workflow:needs_approval',
+  'workflow:needs_input',
   'workflow:run:complete',
 ];
 

@@ -9,6 +9,7 @@ const RUN_STATE = {
   queued: 'queued',
   running: 'running',
   waitingApproval: 'waiting_approval',
+  waitingInput: 'waiting_input',
   completed: 'completed',
   failed: 'failed',
   cancelled: 'cancelled',
@@ -26,6 +27,38 @@ const SUCCESS_STATES = new Set([STEP_STATE.completed, STEP_STATE.skipped]);
 
 function formatIsoNow() {
   return new Date().toISOString();
+}
+
+function coerceInputText(event) {
+  const content = event?.content;
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+  if (content && typeof content === 'object' && typeof content.text === 'string') {
+    return content.text.trim();
+  }
+  return String(content ?? '').trim();
+}
+
+function resolvePathValue(objectValue, pathValue) {
+  if (!pathValue) {
+    return '';
+  }
+
+  const parts = String(pathValue).split('.').filter(Boolean);
+  let current = objectValue;
+  for (const part of parts) {
+    if (current == null || typeof current !== 'object' || !(part in current)) {
+      return '';
+    }
+    current = current[part];
+  }
+
+  if (current == null) {
+    return '';
+  }
+
+  return String(current);
 }
 
 function createRunRecord(id, workflow, args) {
@@ -83,6 +116,11 @@ export class WorkflowEngine {
     this.#unsubscribes.push(
       this.#bus.on('workflow:step:complete', (event) =>
         this.#handleStepComplete(event),
+      ),
+    );
+    this.#unsubscribes.push(
+      this.#bus.on('user:input', (event) =>
+        this.#handleUserInput(event),
       ),
     );
   }
@@ -152,6 +190,10 @@ export class WorkflowEngine {
 
   listRuns() {
     return [...this.#runs.values()];
+  }
+
+  hasPendingInput(sessionId = null) {
+    return this.#findRunWaitingForInput(sessionId) != null;
   }
 
   async #handleStepComplete(event) {
@@ -242,7 +284,36 @@ export class WorkflowEngine {
       },
     });
 
-    if (String(workflowStep?.type ?? 'agent') !== 'agent') {
+    const stepType = String(workflowStep?.type ?? 'agent');
+    if (stepType === 'wait_for_input') {
+      run.state = RUN_STATE.waitingInput;
+      run.updatedAt = formatIsoNow();
+      await this.#persistRun(run);
+
+      const prompt = String(workflowStep?.prompt ?? '').trim();
+      await this.#bus.emit({
+        type: 'workflow:needs_input',
+        sessionId: run.args?.sessionId ?? undefined,
+        content: {
+          runId: run.id,
+          stepId: workflowStep.id,
+          prompt,
+          responseKey: workflowStep.responseKey,
+        },
+      });
+
+      await this.#bus.emit({
+        type: 'agent:response',
+        sessionId: run.args?.sessionId ?? undefined,
+        content: {
+          text: prompt,
+          finishReason: 'workflow_input',
+        },
+      });
+      return;
+    }
+
+    if (stepType !== 'agent') {
       await this.#executeSystemStep(run, workflowStep, nextStep);
     }
   }
@@ -254,7 +325,7 @@ export class WorkflowEngine {
     try {
       const type = String(workflowStep?.type ?? '');
       const stepPath = workflowStep?.path;
-      const content = workflowStep?.content ?? '';
+      const content = this.#renderTemplate(workflowStep?.content ?? '', run);
 
       if (!this.#workspaceManager) {
         throw new Error('workspaceManager is required for system workflow steps.');
@@ -359,6 +430,84 @@ export class WorkflowEngine {
       type: 'workflow:run:complete',
       content: { runId: run.id, workflowId: run.workflowId, state: RUN_STATE.failed },
     });
+  }
+
+  async #handleUserInput(event) {
+    const run = this.#findRunWaitingForInput(event?.sessionId ?? null);
+    if (!run) {
+      return;
+    }
+
+    const workflow = this.#registry.get(run.workflowId, run.workflowVersion);
+    if (!workflow) {
+      return;
+    }
+
+    const runStep = run.steps.find((step) => step.state === STEP_STATE.active);
+    if (!runStep) {
+      return;
+    }
+
+    const workflowStep = workflow.steps.find((step) => step.id === runStep.id);
+    if (!workflowStep || String(workflowStep.type ?? 'agent') !== 'wait_for_input') {
+      return;
+    }
+
+    const inputText = coerceInputText(event);
+    if (!inputText) {
+      return;
+    }
+
+    if (!run.args || typeof run.args !== 'object') {
+      run.args = {};
+    }
+
+    run.args[workflowStep.responseKey] = inputText;
+    run.state = RUN_STATE.running;
+    run.updatedAt = formatIsoNow();
+    await this.#persistRun(run);
+
+    event.__workflowConsumed = true;
+
+    await this.#completeActiveStep({
+      run,
+      runStep,
+      workflowStep,
+      result: inputText,
+      toolResults: [],
+      emitStepCompleteEvent: false,
+    });
+  }
+
+  #findRunWaitingForInput(sessionId = null) {
+    const candidates = this.listRuns()
+      .filter((run) => run.state === RUN_STATE.waitingInput)
+      .sort((left, right) => left.id - right.id);
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    if (sessionId && sessionId.length > 0) {
+      const matched = candidates.find((run) =>
+        !run.args?.sessionId || run.args.sessionId === sessionId,
+      );
+      if (matched) {
+        if (!matched.args?.sessionId) {
+          matched.args = { ...(matched.args ?? {}), sessionId };
+        }
+        return matched;
+      }
+    }
+
+    return candidates[0];
+  }
+
+  #renderTemplate(text, run) {
+    const source = String(text ?? '');
+    return source.replace(/\{\{\s*args\.([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, keyPath) => (
+      resolvePathValue(run.args ?? {}, keyPath)
+    ));
   }
 
   #findNextReadyStep(run) {

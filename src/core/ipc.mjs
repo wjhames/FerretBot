@@ -12,6 +12,7 @@ const OUTBOUND_EVENT_TYPES = new Set([
   'workflow:step:start',
   'workflow:step:complete',
   'workflow:needs_approval',
+  'workflow:needs_input',
   'workflow:run:complete',
 ]);
 

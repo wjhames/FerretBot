@@ -407,3 +407,78 @@ test('system workflow steps execute without agent loop and complete run', async 
     engine.stop();
   });
 });
+
+test('wait_for_input steps pause run, capture user input, and continue', async () => {
+  await withTempDir(async (storageDir) => {
+    const workspaceDir = path.join(storageDir, 'workspace');
+    const workspaceManager = createWorkspaceManager({ baseDir: workspaceDir });
+    await workspaceManager.ensureWorkspace();
+
+    const bus = new FakeBus();
+    const wf = makeWorkflow({
+      id: 'input-wf',
+      steps: [
+        {
+          id: 'ask-name',
+          name: 'ask-name',
+          type: 'wait_for_input',
+          instruction: '',
+          prompt: 'What is your name?',
+          responseKey: 'user_name',
+          tools: [],
+          loadSkills: [],
+          dependsOn: [],
+          successChecks: [],
+          timeout: null,
+          retries: 0,
+          approval: false,
+          condition: null,
+          path: null,
+          content: null,
+          mode: null,
+        },
+        {
+          id: 'write-name',
+          name: 'write-name',
+          type: 'system_write_file',
+          instruction: '',
+          path: 'name.txt',
+          content: '{{args.user_name}}',
+          tools: [],
+          loadSkills: [],
+          dependsOn: ['ask-name'],
+          successChecks: [],
+          timeout: null,
+          retries: 0,
+          approval: false,
+          condition: null,
+          prompt: null,
+          responseKey: null,
+          mode: null,
+        },
+      ],
+    });
+
+    const registry = makeRegistry([wf]);
+    const engine = createWorkflowEngine({ bus, registry, storageDir, workspaceManager });
+    engine.start();
+
+    const run = await engine.startRun('input-wf');
+    assert.equal(run.state, 'waiting_input');
+    assert.ok(bus.eventsOfType('workflow:needs_input').length >= 1);
+    assert.ok(engine.hasPendingInput());
+
+    await bus.emit({
+      type: 'user:input',
+      channel: 'tui',
+      sessionId: 's-input',
+      content: { text: 'Morgan' },
+    });
+
+    assert.equal(run.state, 'completed');
+    assert.equal(run.args.user_name, 'Morgan');
+    assert.equal(await workspaceManager.readTextFile('name.txt'), 'Morgan');
+
+    engine.stop();
+  });
+});

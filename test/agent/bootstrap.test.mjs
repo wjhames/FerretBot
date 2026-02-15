@@ -48,6 +48,10 @@ test('workspace bootstrap manager seeds prompt files and bootstrap workflow', as
       assert.equal(exists, true, `expected ${relativePath} to exist`);
     }
 
+    const bootstrapWorkflow = await workspaceManager.readTextFile('workflows/bootstrap-init/workflow.yaml');
+    assert.match(bootstrapWorkflow, /type: wait_for_input/);
+    assert.match(bootstrapWorkflow, /responseKey: user_name/);
+
     const descriptor = bootstrap.getBootstrapWorkflowDescriptor();
     assert.equal(descriptor.id, 'bootstrap-init');
     assert.equal(descriptor.version, '1.0.0');

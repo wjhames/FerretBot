@@ -213,11 +213,74 @@ const TEMPLATE_BOOTSTRAP_WORKFLOW = `id: ${BOOTSTRAP_WORKFLOW_ID}
 version: "${BOOTSTRAP_WORKFLOW_VERSION}"
 name: Workspace Bootstrap
 steps:
+  - id: ask-user-name
+    type: wait_for_input
+    prompt: "What name should I use for you?"
+    responseKey: user_name
+  - id: ask-assistant-name
+    type: wait_for_input
+    prompt: "What should I call myself in this workspace?"
+    responseKey: assistant_name
+    dependsOn: [ask-user-name]
+  - id: write-user
+    type: system_write_file
+    path: USER.md
+    content: |
+      # USER.md
+
+      ## Identity
+      - Name: {{args.user_name}}
+      - Role:
+      - Context:
+
+      ## Preferences
+      - Communication style:
+      - Technical depth:
+      - Tooling habits:
+
+      ## Goals
+      - Near-term:
+      - Long-term:
+
+      ## Constraints
+      - Time:
+      - Security/compliance:
+      - Infrastructure:
+
+      ## Working agreements
+      - Do:
+      - Avoid:
+
+      ## Unknowns
+      - Pending clarifications:
+    dependsOn: [ask-user-name]
+  - id: write-identity
+    type: system_write_file
+    path: IDENTITY.md
+    content: |
+      # IDENTITY.md
+
+      ## Name
+      {{args.assistant_name}}
+
+      ## Purpose
+      Local-first coding partner for this workspace.
+
+      ## Skills
+      Implementation, debugging, refactoring, and workflow execution.
+
+      ## Operating style
+      Pragmatic, concise, and deterministic.
+
+      ## Boundaries
+      No fabricated tool results. No unsafe destructive actions.
+    dependsOn: [ask-assistant-name]
   - id: mark-complete
     type: system_write_file
     path: ${DEFAULT_PROMPT_FILES.bootstrapMarker}
     content: |
       {"status":"complete"}
+    dependsOn: [write-user, write-identity]
   - id: delete-bootstrap-md
     type: system_delete_file
     path: ${DEFAULT_PROMPT_FILES.bootstrap}

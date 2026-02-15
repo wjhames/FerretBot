@@ -174,6 +174,25 @@ test('rejects invalid system step definitions', () => {
   assert.ok(missingContent.errors.some((e) => e.includes('content is required for system_write_file')));
 });
 
+test('validates wait_for_input step requirements', () => {
+  const valid = validateWorkflow(minimalWorkflow({
+    steps: [{ id: 'ask', type: 'wait_for_input', prompt: 'What is your name?', responseKey: 'user_name' }],
+  }));
+  assert.equal(valid.valid, true);
+
+  const missingPrompt = validateWorkflow(minimalWorkflow({
+    steps: [{ id: 'ask', type: 'wait_for_input', responseKey: 'user_name' }],
+  }));
+  assert.equal(missingPrompt.valid, false);
+  assert.ok(missingPrompt.errors.some((e) => e.includes('prompt is required for wait_for_input')));
+
+  const missingKey = validateWorkflow(minimalWorkflow({
+    steps: [{ id: 'ask', type: 'wait_for_input', prompt: 'Name?' }],
+  }));
+  assert.equal(missingKey.valid, false);
+  assert.ok(missingKey.errors.some((e) => e.includes('responseKey is required for wait_for_input')));
+});
+
 test('requires step instruction', () => {
   const result = validateWorkflow(minimalWorkflow({
     steps: [{ id: 'a', tools: ['bash'] }],

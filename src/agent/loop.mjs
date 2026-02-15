@@ -242,6 +242,20 @@ export class AgentLoop {
         }
       }
 
+      if (
+        event.type === 'user:input'
+        && (
+          event?.__workflowConsumed === true
+          || (
+            this.#workflowEngine
+            && typeof this.#workflowEngine.hasPendingInput === 'function'
+            && this.#workflowEngine.hasPendingInput(event?.sessionId ?? null)
+          )
+        )
+      ) {
+        return;
+      }
+
       await this.#handleEvent(event);
     });
   }
