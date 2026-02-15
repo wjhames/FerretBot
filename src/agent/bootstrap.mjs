@@ -267,11 +267,6 @@ steps:
     prompt: "Any boundaries or preferences I should always respect?"
     responseKey: soul_boundaries
     dependsOn: [ask-soul-behavior]
-  - id: ask-connect
-    type: wait_for_input
-    prompt: "Optional: how should you reach me? just-here, whatsapp, telegram."
-    responseKey: connect_preference
-    dependsOn: [ask-soul-boundaries]
   - id: write-user
     type: system_write_file
     path: USER.md
@@ -305,8 +300,8 @@ steps:
 
       ## Unknowns
       - Notes: {{args.user_notes}}
-      - Connect preference: {{args.connect_preference}}
-    dependsOn: [ask-connect]
+      - Connect preference: just-here
+    dependsOn: [ask-soul-boundaries]
   - id: write-identity
     type: system_write_file
     path: IDENTITY.md
@@ -336,7 +331,7 @@ steps:
 
       ## Boundaries
       No fabricated tool results. No unsafe destructive actions.
-    dependsOn: [ask-connect]
+    dependsOn: [ask-soul-boundaries]
   - id: write-soul
     type: system_write_file
     path: SOUL.md
@@ -360,7 +355,7 @@ steps:
 
       ## Boundaries
       - {{args.soul_boundaries}}
-    dependsOn: [ask-connect]
+    dependsOn: [ask-soul-boundaries]
   - id: mark-complete
     type: system_write_file
     path: ${DEFAULT_PROMPT_FILES.bootstrapMarker}

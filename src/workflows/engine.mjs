@@ -133,6 +133,9 @@ export class WorkflowEngine {
     );
     this.#unsubscribes.push(
       this.#bus.on('user:input', (event) => {
+        if (this.#shouldConsumeUserInput(event)) {
+          event.__workflowConsumed = true;
+        }
         void this.#handleUserInput(event);
       }),
     );
@@ -573,6 +576,27 @@ export class WorkflowEngine {
     }
 
     return candidates[0];
+  }
+
+  #shouldConsumeUserInput(event) {
+    const sessionId = event?.sessionId ?? null;
+    const run = this.#findRunWaitingForInput(sessionId);
+    if (!run) {
+      return false;
+    }
+
+    const workflow = this.#registry.get(run.workflowId, run.workflowVersion);
+    if (!workflow) {
+      return false;
+    }
+
+    const activeStep = run.steps.find((step) => step.state === STEP_STATE.active);
+    if (!activeStep) {
+      return false;
+    }
+
+    const workflowStep = workflow.steps.find((step) => step.id === activeStep.id);
+    return String(workflowStep?.type ?? '') === 'wait_for_input';
   }
 
   #renderTemplate(text, run) {

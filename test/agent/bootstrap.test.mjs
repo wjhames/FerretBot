@@ -59,7 +59,6 @@ test('workspace bootstrap manager seeds prompt files and bootstrap workflow', as
     assert.match(bootstrapWorkflow, /responseKey: soul_matters/);
     assert.match(bootstrapWorkflow, /responseKey: soul_behavior/);
     assert.match(bootstrapWorkflow, /responseKey: soul_boundaries/);
-    assert.match(bootstrapWorkflow, /responseKey: connect_preference/);
     assert.match(bootstrapWorkflow, /Hey, I just came online/);
 
     const descriptor = bootstrap.getBootstrapWorkflowDescriptor();

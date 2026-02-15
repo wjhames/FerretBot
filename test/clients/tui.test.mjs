@@ -127,8 +127,7 @@ test('tui client appends inbound messages and sends user input through ipc', asy
   assert.equal(state.messages[0].text, 'hello agent');
   assert.equal(state.messages[1].role, 'assistant');
   assert.equal(state.messages[1].text, 'hello human');
-  assert.equal(state.messages[2].role, 'system');
-  assert.match(state.messages[2].text, /\[workflow:run:queued\]/);
+  assert.equal(state.messages.length, 2);
   assert.equal(sent[0], 'hello agent');
 
   client.stop();
