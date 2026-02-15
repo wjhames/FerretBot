@@ -99,6 +99,10 @@ export class AgentLoop {
   #parser;
   #contextManager;
   #toolRegistry;
+  #workflowRegistry;
+  #workflowEngine;
+  #skillLoader;
+  #sessionMemory;
   #maxTokens;
   #maxToolCallsPerStep;
   #retryLimit;
@@ -112,6 +116,10 @@ export class AgentLoop {
       parser,
       contextManager,
       toolRegistry = null,
+      workflowRegistry = null,
+      workflowEngine = null,
+      skillLoader = null,
+      sessionMemory = null,
       maxTokens = 1024,
       maxToolCallsPerStep = 10,
       retryLimit = DEFAULT_RETRY_LIMIT,
@@ -152,6 +160,10 @@ export class AgentLoop {
     this.#provider = provider;
     this.#parser = parser;
     this.#toolRegistry = toolRegistry;
+    this.#workflowRegistry = workflowRegistry;
+    this.#workflowEngine = workflowEngine;
+    this.#skillLoader = skillLoader;
+    this.#sessionMemory = sessionMemory;
     this.#maxTokens = maxTokens;
     this.#maxToolCallsPerStep = maxToolCallsPerStep;
     this.#retryLimit = retryLimit;
@@ -214,14 +226,159 @@ export class AgentLoop {
     };
   }
 
-  #buildInitialContext(event) {
+  #getLayerBudget(name) {
+    if (typeof this.#contextManager?.getLayerBudgets !== 'function') {
+      return null;
+    }
+
+    const budgets = this.#contextManager.getLayerBudgets();
+    const value = budgets?.[name];
+    return Number.isFinite(value) ? value : null;
+  }
+
+  #toCharBudget(tokenBudget) {
+    if (!Number.isFinite(tokenBudget) || tokenBudget <= 0) {
+      return 0;
+    }
+
+    return Math.max(0, Math.floor((tokenBudget * 4) / 1.1));
+  }
+
+  async #loadConversationContext(event) {
+    if (!this.#sessionMemory || typeof this.#sessionMemory.collectConversation !== 'function') {
+      return { turns: [], summary: '' };
+    }
+    if (!event?.sessionId) {
+      return { turns: [], summary: '' };
+    }
+
+    const conversationLimit = this.#getLayerBudget('conversation');
+    const tokenLimit = Number.isFinite(conversationLimit) && conversationLimit > 0 ? conversationLimit : undefined;
+
+    const collected = await this.#sessionMemory.collectConversation(event.sessionId, {
+      tokenLimit,
+    });
+
+    const turns = Array.isArray(collected?.turns)
+      ? collected.turns.map((entry) => ({
+          role: entry?.role === 'assistant' ? 'assistant' : 'user',
+          content: String(entry?.content ?? '').trim(),
+        })).filter((entry) => entry.content.length > 0)
+      : [];
+
+    return {
+      turns,
+      summary: typeof collected?.summary === 'string' ? collected.summary : '',
+    };
+  }
+
+  #resolveWorkflowRuntime(event) {
+    if (event.type !== WORKFLOW_STEP_START_EVENT) {
+      return { workflow: null, run: null };
+    }
+
+    const runId = event.content?.runId;
+    const run = this.#workflowEngine && typeof this.#workflowEngine.getRun === 'function'
+      ? this.#workflowEngine.getRun(runId)
+      : null;
+
+    const workflowId = run?.workflowId ?? event.content?.workflowId;
+    const workflowVersion = run?.workflowVersion;
+    const workflow = workflowId && this.#workflowRegistry && typeof this.#workflowRegistry.get === 'function'
+      ? this.#workflowRegistry.get(workflowId, workflowVersion)
+      : null;
+
+    return { workflow, run };
+  }
+
+  async #loadSkillText(event) {
+    if (event.type !== WORKFLOW_STEP_START_EVENT) {
+      return '';
+    }
+
+    if (!this.#skillLoader || typeof this.#skillLoader.loadSkillsForStep !== 'function') {
+      return '';
+    }
+
+    const step = event.content?.step;
+    const requestedSkills = Array.isArray(step?.loadSkills) ? step.loadSkills : [];
+    if (requestedSkills.length === 0) {
+      return '';
+    }
+
+    const { workflow } = this.#resolveWorkflowRuntime(event);
+    const workflowDir = event.content?.workflowDir ?? workflow?.dir;
+    if (!workflowDir) {
+      return '';
+    }
+
+    const skillsBudget = this.#getLayerBudget('skills');
+    const loaded = await this.#skillLoader.loadSkillsForStep({
+      workflowDir,
+      skillNames: requestedSkills,
+      maxSkillContentChars: this.#toCharBudget(skillsBudget),
+    });
+
+    return loaded?.text ?? '';
+  }
+
+  #buildPriorSteps(event) {
+    if (event.type !== WORKFLOW_STEP_START_EVENT) {
+      return [];
+    }
+
+    const { workflow, run } = this.#resolveWorkflowRuntime(event);
+    if (!workflow || !run || !Array.isArray(run.steps) || !Array.isArray(workflow.steps)) {
+      return [];
+    }
+
+    const currentStepId = event.content?.step?.id;
+    const currentIndex = workflow.steps.findIndex((step) => step.id === currentStepId);
+    const byId = new Map(workflow.steps.map((step, index) => [step.id, { step, index }]));
+
+    const completed = [];
+    for (const runStep of run.steps) {
+      if (runStep?.state !== 'completed') {
+        continue;
+      }
+      if (runStep.id === currentStepId || runStep.result == null) {
+        continue;
+      }
+
+      const workflowStep = byId.get(runStep.id);
+      if (!workflowStep) {
+        continue;
+      }
+      if (currentIndex !== -1 && workflowStep.index >= currentIndex) {
+        continue;
+      }
+
+      completed.push({
+        id: completed.length + 1,
+        instruction: workflowStep.step.instruction,
+        result: runStep.result,
+      });
+    }
+
+    return completed;
+  }
+
+  async #buildInitialContext(event) {
     const isStepEvent = STEP_START_EVENTS.has(event.type);
+    const conversationContext = await this.#loadConversationContext(event);
+    const skillContent = await this.#loadSkillText(event);
+    const priorSteps = this.#buildPriorSteps(event);
 
     const builtContext = this.#contextManager.buildMessages({
       event,
       mode: isStepEvent ? 'step' : 'interactive',
       userInput: coerceInputText(event),
       step: isStepEvent ? (event.content?.step ?? null) : null,
+      conversation: conversationContext.turns,
+      conversationSummary: conversationContext.summary,
+      skillContent,
+      priorSteps,
+      tools: getToolDefinitionsForEvent(this.#toolRegistry, event),
     });
 
     return {
@@ -233,7 +390,8 @@ export class AgentLoop {
   }
 
   async #handleEvent(event) {
-    const { messages, maxOutputTokens } = this.#buildInitialContext(event);
+    const { messages, maxOutputTokens } = await this.#buildInitialContext(event);
+    await this.#persistInputTurn(event);
 
     let toolCalls = 0;
     let correctionRetries = 0;
@@ -279,7 +437,7 @@ export class AgentLoop {
       const parsed = this.#parseCompletion(completion);
 
       if (parsed.kind === 'emit_final') {
-        this.#emitFinal(event, completion, parsed.text);
+        await this.#emitFinal(event, completion, parsed.text);
         return;
       }
 
@@ -380,8 +538,17 @@ export class AgentLoop {
     return { done: false, correctionRetries: nextRetries };
   }
 
-  #emitFinal(event, completion, text) {
+  async #emitFinal(event, completion, text) {
     const finalText = normalizeFinalText(text);
+    await this.#appendSessionTurn(event.sessionId, {
+      role: 'assistant',
+      type: 'agent_response',
+      content: finalText,
+      meta: {
+        finishReason: completion.finishReason,
+        usage: completion.usage,
+      },
+    });
 
     this.#queueEmit({
       type: 'agent:response',
@@ -514,6 +681,20 @@ export class AgentLoop {
       arguments: parsedToolCall.arguments,
       event,
     });
+    await this.#appendSessionTurn(event.sessionId, {
+      role: 'assistant',
+      type: 'tool_call',
+      content: JSON.stringify({
+        name: parsedToolCall.toolName,
+        arguments: parsedToolCall.arguments,
+      }),
+    });
+    await this.#appendSessionTurn(event.sessionId, {
+      role: 'system',
+      type: 'tool_result',
+      content: JSON.stringify(toolResult),
+      meta: { tool: parsedToolCall.toolName },
+    });
 
     this.#queueEmit({
       type: 'agent:status',
@@ -557,6 +738,37 @@ export class AgentLoop {
         finishReason: 'parse_failed',
       },
     });
+  }
+
+  async #persistInputTurn(event) {
+    if (event.type !== 'user:input') {
+      return;
+    }
+
+    await this.#appendSessionTurn(event.sessionId, {
+      role: 'user',
+      type: 'user_input',
+      content: coerceInputText(event),
+      meta: {
+        channel: event.channel,
+      },
+    });
+  }
+
+  async #appendSessionTurn(sessionId, entry) {
+    if (!this.#sessionMemory || typeof this.#sessionMemory.appendTurn !== 'function') {
+      return;
+    }
+
+    if (!sessionId) {
+      return;
+    }
+
+    try {
+      await this.#sessionMemory.appendTurn(sessionId, entry);
+    } catch {
+      // Session persistence is best-effort and must not block the loop.
+    }
   }
 
   #queueEmit(event) {

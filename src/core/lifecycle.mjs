@@ -11,6 +11,9 @@ import { createToolRegistry } from '../tools/registry.mjs';
 import { createTaskManager as createLegacyTaskManager } from '../tasks/manager.mjs';
 import { createWorkflowRegistry } from '../workflows/registry.mjs';
 import { createWorkflowEngine } from '../workflows/engine.mjs';
+import { createSkillLoader } from '../skills/loader.mjs';
+import { createSessionMemory } from '../memory/session.mjs';
+import { createWorkspaceManager } from '../memory/workspace.mjs';
 
 const DEFAULT_CONFIG_PATH = DEFAULT_AGENT_CONFIG_PATH;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -80,6 +83,26 @@ function defaultCreateIpcServer({ bus, config = {} }) {
   });
 }
 
+function defaultCreateSkillLoader({ config = {} }) {
+  return createSkillLoader({
+    rootDir: config.skills?.rootDir,
+    skillsDirName: config.skills?.dirName,
+  });
+}
+
+function defaultCreateSessionMemory({ config = {} }) {
+  return createSessionMemory({
+    baseDir: config.memory?.sessionsDir ?? config.session?.storageDir,
+  });
+}
+
+function defaultCreateWorkspaceManager({ config = {} }) {
+  return createWorkspaceManager({
+    baseDir: config.workspace?.path,
+    cleanupThreshold: config.workspace?.cleanupThresholdMs,
+  });
+}
+
 export class AgentLifecycle {
   #configPath;
   #shutdownTimeoutMs;
@@ -95,6 +118,9 @@ export class AgentLifecycle {
   #createIpcServer;
   #createWorkflowRegistry;
   #createWorkflowEngine;
+  #createSkillLoader;
+  #createSessionMemory;
+  #createWorkspaceManager;
   #createScheduler;
   #persistState;
 
@@ -119,6 +145,9 @@ export class AgentLifecycle {
     this.#createIpcServer = options.createIpcServer ?? defaultCreateIpcServer;
     this.#createWorkflowRegistry = options.createWorkflowRegistry ?? (({ config }) => createWorkflowRegistry({ baseDir: config.workflows?.rootDir }));
     this.#createWorkflowEngine = options.createWorkflowEngine ?? (({ bus, registry, config }) => createWorkflowEngine({ bus, registry, storageDir: config.workflows?.runsDir }));
+    this.#createSkillLoader = options.createSkillLoader ?? defaultCreateSkillLoader;
+    this.#createSessionMemory = options.createSessionMemory ?? defaultCreateSessionMemory;
+    this.#createWorkspaceManager = options.createWorkspaceManager ?? defaultCreateWorkspaceManager;
     this.#createScheduler = options.createScheduler ?? ((_) => createNoopScheduler());
     this.#persistState = options.persistState ?? (async () => {});
 
@@ -144,6 +173,12 @@ export class AgentLifecycle {
     await workflowRegistry.loadAll();
     const workflowEngine = this.#createWorkflowEngine({ bus, registry: workflowRegistry, config });
     workflowEngine.start();
+    const skillLoader = this.#createSkillLoader({ config });
+    const sessionMemory = this.#createSessionMemory({ config });
+    const workspaceManager = this.#createWorkspaceManager({ config });
+    if (workspaceManager && typeof workspaceManager.ensureWorkspace === 'function') {
+      await workspaceManager.ensureWorkspace();
+    }
 
     const toolRegistry = this.#createToolRegistry({
       config,
@@ -162,6 +197,11 @@ export class AgentLifecycle {
       parser,
       taskManager: legacyTaskManager,
       toolRegistry,
+      workflowRegistry,
+      workflowEngine,
+      skillLoader,
+      sessionMemory,
+      workspaceManager,
       maxTokens: config.agent?.maxTokens,
       maxToolCallsPerStep: config.agent?.maxToolCallsPerStep,
     });
@@ -192,6 +232,9 @@ export class AgentLifecycle {
       taskManager: legacyTaskManager,
       workflowRegistry,
       workflowEngine,
+      skillLoader,
+      sessionMemory,
+      workspaceManager,
       toolRegistry,
       agentLoop,
       ipcServer,

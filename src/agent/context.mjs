@@ -211,6 +211,7 @@ function buildLayerText(options = {}) {
     tools = [],
     skillContent = '',
     priorSteps = [],
+    conversationSummary = '',
   } = options;
 
   const systemText = buildSystemPrompt({
@@ -227,11 +228,20 @@ function buildLayerText(options = {}) {
     stepScopeParts.push(`Available tools:\n${toolText}`);
   }
 
+  const priorParts = [];
+  const compressedSteps = compressPriorSteps(priorSteps);
+  if (compressedSteps) {
+    priorParts.push(compressedSteps);
+  }
+  if (toText(conversationSummary).trim()) {
+    priorParts.push(`Conversation summary:\n${toText(conversationSummary).trim()}`);
+  }
+
   return {
     system: systemText,
     task: stepScopeParts.join('\n\n'),
     skills: toText(skillContent).trim(),
-    prior: compressPriorSteps(priorSteps),
+    prior: priorParts.join('\n\n'),
   };
 }
 

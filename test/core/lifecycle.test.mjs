@@ -111,6 +111,22 @@ test('lifecycle start/shutdown follows expected orchestration order', async () =
         stop() { recorder.push('workflowEngine.stop'); },
       };
     },
+    createSkillLoader: () => {
+      recorder.push('skills.create');
+      return {};
+    },
+    createSessionMemory: () => {
+      recorder.push('session.create');
+      return {};
+    },
+    createWorkspaceManager: () => {
+      recorder.push('workspace.create');
+      return {
+        async ensureWorkspace() {
+          recorder.push('workspace.ensure');
+        },
+      };
+    },
     createToolRegistry: () => {
       recorder.push('tools.create');
       return toolRegistry;
@@ -145,6 +161,10 @@ test('lifecycle start/shutdown follows expected orchestration order', async () =
     'workflowRegistry.loadAll',
     'workflowEngine.create',
     'workflowEngine.start',
+    'skills.create',
+    'session.create',
+    'workspace.create',
+    'workspace.ensure',
     'tools.create',
     'tools.registerBuiltIns',
     'agentLoop.create',
@@ -182,6 +202,9 @@ test('lifecycle responds to SIGTERM and shuts down once', async () => {
     createTaskManager: () => ({ marker: true }),
     createWorkflowRegistry: () => ({ async loadAll() {}, get() { return null; } }),
     createWorkflowEngine: () => ({ start() {}, stop() { calls.push('workflowEngine.stop'); } }),
+    createSkillLoader: () => ({}),
+    createSessionMemory: () => ({}),
+    createWorkspaceManager: () => ({ async ensureWorkspace() {} }),
     createToolRegistry: () => ({ execute: async () => ({ ok: true }) }),
     createAgentLoop: () => ({
       start() {
@@ -242,6 +265,9 @@ test('lifecycle default tool registry registers built-in tools', async () => {
     createParser: () => ({ parse: () => ({ kind: 'final', text: '' }) }),
     createWorkflowRegistry: () => ({ async loadAll() {}, get() { return null; } }),
     createWorkflowEngine: () => ({ start() {}, stop() {} }),
+    createSkillLoader: () => ({}),
+    createSessionMemory: () => ({}),
+    createWorkspaceManager: () => ({ async ensureWorkspace() {} }),
     createAgentLoop: () => ({
       start() {},
       stop() {},

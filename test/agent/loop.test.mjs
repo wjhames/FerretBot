@@ -545,3 +545,134 @@ test('loop handles workflow:step:start, scopes tools, and emits workflow:step:co
   const taskComplete = emitted.find((event) => event.type === 'task:step:complete');
   assert.equal(taskComplete, undefined);
 });
+
+test('loop enriches workflow context with session turns, summary, skills, and prior steps', async () => {
+  const bus = createEventBus();
+  const emitted = [];
+  const capturedContextInputs = [];
+  const skillLoadCalls = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  const provider = createSequencedProvider(['workflow enriched response']);
+  const parser = {
+    parse(text) {
+      return { kind: 'final', text };
+    },
+  };
+
+  const workflow = {
+    id: 'wf-id',
+    version: '1.0.0',
+    dir: '/tmp/workflows/wf-id',
+    steps: [
+      { id: 'prepare', instruction: 'prepare workspace' },
+      { id: 'build', instruction: 'build project' },
+    ],
+  };
+  const run = {
+    id: 7,
+    workflowId: workflow.id,
+    workflowVersion: workflow.version,
+    steps: [
+      { id: 'prepare', state: 'completed', result: 'workspace ready' },
+      { id: 'build', state: 'active', result: null },
+    ],
+  };
+
+  const contextManager = {
+    getLayerBudgets() {
+      return { conversation: 100, skills: 50 };
+    },
+    buildMessages(input) {
+      capturedContextInputs.push(input);
+      return {
+        messages: [{ role: 'user', content: 'synthetic prompt' }],
+        maxOutputTokens: 128,
+      };
+    },
+  };
+
+  const loop = createAgentLoop({
+    bus,
+    provider,
+    parser,
+    contextManager,
+    workflowRegistry: {
+      get() {
+        return workflow;
+      },
+    },
+    workflowEngine: {
+      getRun() {
+        return run;
+      },
+    },
+    skillLoader: {
+      async loadSkillsForStep(args) {
+        skillLoadCalls.push(args);
+        return { text: 'workflow skill content', entries: [], missing: [], requested: args.skillNames };
+      },
+    },
+    sessionMemory: {
+      async collectConversation() {
+        return {
+          turns: [
+            { role: 'user', content: 'earlier user turn' },
+            { role: 'assistant', content: 'earlier assistant turn' },
+          ],
+          summary: 'Earlier turns: user discussed goals.',
+        };
+      },
+      async appendTurn() {},
+    },
+    toolRegistry: {
+      list() {
+        return [{ name: 'bash', description: 'run shell', schema: { type: 'object' } }];
+      },
+      validateCall() {
+        return { valid: true, errors: [] };
+      },
+      async execute() {
+        return {};
+      },
+    },
+    maxTokens: 128,
+  });
+
+  loop.start();
+  await bus.emit({
+    type: 'workflow:step:start',
+    channel: 'tui',
+    sessionId: 's-wf-enriched',
+    content: {
+      runId: 7,
+      workflowId: 'wf-id',
+      workflowDir: workflow.dir,
+      step: {
+        id: 'build',
+        instruction: 'build project',
+        tools: ['bash'],
+        loadSkills: ['build.skill.md'],
+      },
+    },
+  });
+
+  await waitFor(() => emitted.some((event) => event.type === 'workflow:step:complete'));
+  loop.stop();
+
+  assert.equal(skillLoadCalls.length, 1);
+  assert.equal(skillLoadCalls[0].workflowDir, workflow.dir);
+  assert.deepEqual(skillLoadCalls[0].skillNames, ['build.skill.md']);
+
+  assert.equal(capturedContextInputs.length, 1);
+  const contextInput = capturedContextInputs[0];
+  assert.equal(contextInput.skillContent, 'workflow skill content');
+  assert.equal(contextInput.conversationSummary, 'Earlier turns: user discussed goals.');
+  assert.equal(contextInput.conversation.length, 2);
+  assert.equal(contextInput.priorSteps.length, 1);
+  assert.match(contextInput.priorSteps[0].instruction, /prepare workspace/);
+  assert.equal(contextInput.priorSteps[0].result, 'workspace ready');
+});

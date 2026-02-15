@@ -254,10 +254,13 @@ export class WorkflowEngine {
       content: {
         runId: run.id,
         workflowId: run.workflowId,
+        workflowVersion: run.workflowVersion,
+        workflowDir: workflow.dir ?? null,
         step: {
           id: workflowStep.id,
           instruction: workflowStep.instruction,
           tools: [...workflowStep.tools],
+          loadSkills: [...(workflowStep.loadSkills ?? [])],
           total: workflow.steps.length,
         },
       },

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import { SessionMemory } from '../../src/memory/session.mjs';
 
-const FIXTURE_ROOT = path.resolve('test/memory/fixtures');
+const FIXTURE_ROOT = path.resolve('test/memory/session-fixtures');
 
 async function cleanFixtures() {
   await fs.rm(FIXTURE_ROOT, { recursive: true, force: true });

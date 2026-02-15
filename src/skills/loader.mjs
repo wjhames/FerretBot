@@ -184,6 +184,17 @@ function createLookupMap(entries) {
   return lookup;
 }
 
+function resolveByPrecedence(lookups, key) {
+  for (const lookup of lookups) {
+    const match = lookup.get(key);
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
 async function loadWorkflowSkillEntries(resolvedDir, options) {
   const workflowExists = await safeAccess(resolvedDir);
   if (!workflowExists) {
@@ -355,9 +366,10 @@ export class SkillLoader {
         continue;
       }
 
-      let match = stepLookup.get(key)
-        ?? workflowLookup.get(key)
-        ?? globalLookup.get(key);
+      const match = resolveByPrecedence(
+        [stepLookup, workflowLookup, globalLookup],
+        key,
+      );
 
       if (!match) {
         missing.push(rawName);
@@ -389,4 +401,8 @@ export class SkillLoader {
       requested: skillNames,
     };
   }
+}
+
+export function createSkillLoader(options) {
+  return new SkillLoader(options);
 }

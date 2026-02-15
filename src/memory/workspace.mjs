@@ -9,6 +9,19 @@ async function ensureDir(directory) {
   await fs.mkdir(directory, { recursive: true });
 }
 
+function normalizeThreshold(value, fallback) {
+  return Number.isFinite(value) ? Number(value) : fallback;
+}
+
+function isPathInside(baseDir, targetPath) {
+  const relative = path.relative(baseDir, targetPath);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.length > 0;
+}
+
 export class WorkspaceManager {
   #baseDir;
   #cleanupThreshold;
@@ -16,9 +29,7 @@ export class WorkspaceManager {
 
   constructor(options = {}) {
     this.#baseDir = path.resolve(options.baseDir ?? DEFAULT_WORKSPACE_DIR);
-    this.#cleanupThreshold = Number.isFinite(options.cleanupThreshold)
-      ? Number(options.cleanupThreshold)
-      : DEFAULT_CLEANUP_THRESHOLD;
+    this.#cleanupThreshold = normalizeThreshold(options.cleanupThreshold, DEFAULT_CLEANUP_THRESHOLD);
   }
 
   async #ensureBase() {
@@ -39,11 +50,15 @@ export class WorkspaceManager {
   }
 
   resolve(...segments) {
-    const suffix = path.join(...segments.filter((segment) => typeof segment === 'string' && segment.length > 0));
-    const resolved = suffix ? path.resolve(this.#baseDir, suffix) : this.#baseDir;
-    if (!resolved.startsWith(this.#baseDir)) {
+    const safeSegments = segments.filter(isNonEmptyString);
+    const resolved = safeSegments.length > 0
+      ? path.resolve(this.#baseDir, ...safeSegments)
+      : this.#baseDir;
+
+    if (!isPathInside(this.#baseDir, resolved)) {
       throw new Error('path escapes the workspace root');
     }
+
     return resolved;
   }
 
@@ -63,16 +78,16 @@ export class WorkspaceManager {
       };
     }));
 
+    stats.sort((a, b) => a.name.localeCompare(b.name));
     return stats;
   }
 
   async cleanup(options = {}) {
     await this.#ensureBase();
-    const thresholdMs = Number.isFinite(options.thresholdMs)
-      ? Number(options.thresholdMs)
-      : this.#cleanupThreshold;
+    const thresholdMs = normalizeThreshold(options.thresholdMs, this.#cleanupThreshold);
     const entries = await fs.readdir(this.#baseDir, { withFileTypes: true });
     const now = Date.now();
+    const removed = [];
 
     await Promise.all(entries.map(async (entry) => {
       const entryPath = path.join(this.#baseDir, entry.name);
@@ -82,7 +97,10 @@ export class WorkspaceManager {
         return;
       }
       await fs.rm(entryPath, { recursive: true, force: true });
+      removed.push(entryPath);
     }));
+
+    return removed;
   }
 }
 

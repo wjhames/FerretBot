@@ -5,7 +5,7 @@ import test from 'node:test';
 
 import { WorkspaceManager } from '../../src/memory/workspace.mjs';
 
-const FIXTURE_ROOT = path.resolve('test/memory/fixtures/workspace');
+const FIXTURE_ROOT = path.resolve('test/memory/workspace-fixtures');
 
 async function cleanFixtures() {
   await fs.rm(FIXTURE_ROOT, { recursive: true, force: true });

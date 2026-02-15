@@ -50,6 +50,7 @@ function makeWorkflow(overrides = {}) {
   return {
     id: 'test-wf',
     version: '1.0.0',
+    dir: '/tmp/test-wf',
     name: 'Test',
     description: '',
     inputs: [],
@@ -102,6 +103,8 @@ test('startRun creates a run and emits workflow:step:start', async () => {
     assert.equal(stepStart.content.step.id, 'step-1');
     assert.equal(stepStart.content.step.instruction, 'Do first thing');
     assert.deepEqual(stepStart.content.step.tools, ['bash']);
+    assert.deepEqual(stepStart.content.step.loadSkills, []);
+    assert.equal(stepStart.content.workflowDir, wf.dir);
 
     engine.stop();
   });

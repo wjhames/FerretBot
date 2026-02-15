@@ -15,6 +15,10 @@ function ensureSessionDir(baseDir) {
   return fs.mkdir(baseDir, { recursive: true });
 }
 
+function toSafeString(value) {
+  return typeof value === 'string' ? value : String(value ?? '');
+}
+
 function estimateTokens(text, config = DEFAULT_TOKEN_ESTIMATOR) {
   if (text == null || text.length === 0) {
     return 0;
@@ -36,7 +40,7 @@ function sanitizeSessionId(sessionId) {
 
 function formatSummaryLine(entry) {
   const role = entry.role ?? entry.type ?? 'turn';
-  const content = String(entry.content ?? entry.text ?? '').trim();
+  const content = toSafeString(entry.content ?? entry.text).trim();
   if (content.length === 0) {
     return `${role}: [no text]`;
   }
@@ -54,6 +58,31 @@ function summarizeEntries(entries) {
   const recent = entries.slice(-SUMMARY_LINE_LIMIT);
   const lines = recent.map(formatSummaryLine);
   return `Earlier turns: ${lines.join(' | ')}`;
+}
+
+function normalizeEntry(entry) {
+  return {
+    timestamp: Number.isFinite(entry?.timestamp) ? entry.timestamp : Date.now(),
+    role: entry?.role ?? entry?.type ?? 'system',
+    type: entry?.type ?? 'message',
+    content: toSafeString(entry?.content).trim(),
+    meta: entry?.meta ?? {},
+  };
+}
+
+function parseJsonLines(raw) {
+  const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  const parsed = [];
+
+  for (const line of lines) {
+    try {
+      parsed.push(JSON.parse(line));
+    } catch {
+      // Preserve forward progress when a single JSONL line is malformed.
+    }
+  }
+
+  return parsed;
 }
 
 export class SessionMemory {
@@ -84,23 +113,13 @@ export class SessionMemory {
     return path.join(this.#baseDir, fileName);
   }
 
-  #normalizeEntry(entry) {
-    return {
-      timestamp: Number.isFinite(entry?.timestamp) ? entry.timestamp : Date.now(),
-      role: entry?.role ?? entry?.type ?? 'system',
-      type: entry?.type ?? 'message',
-      content: typeof entry?.content === 'string' ? entry.content.trim() : '',
-      meta: entry?.meta ?? {},
-    };
-  }
-
   async appendTurn(sessionId, entry) {
     if (!sessionId) {
       throw new TypeError('sessionId is required.');
     }
 
     await this.#ensureDir();
-    const normalized = this.#normalizeEntry(entry ?? {});
+    const normalized = normalizeEntry(entry ?? {});
     const line = `${JSON.stringify(normalized)}\n`;
     const filePath = this.#resolveSessionPath(sessionId);
     await fs.appendFile(filePath, line, 'utf-8');
@@ -123,17 +142,7 @@ export class SessionMemory {
       throw err;
     }
 
-    const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
-    const parsed = [];
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        parsed.push(entry);
-      } catch (err) {
-        // skip malformed lines but continue reading
-      }
-    }
-
+    const parsed = parseJsonLines(raw);
     return parsed.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
   }
 
@@ -157,7 +166,7 @@ export class SessionMemory {
       const tokens = estimateTokens(entry.content, this.#tokenEstimatorConfig);
 
       if (selected.length > 0 && usedTokens + tokens > tokenLimit) {
-        summary = summarizeEntries(turns.slice(0, index));
+        summary = summarizeEntries(turns.slice(0, index + 1));
         break;
       }
 
