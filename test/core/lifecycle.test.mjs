@@ -284,3 +284,61 @@ test('lifecycle default tool registry registers built-in tools', async () => {
 
   await lifecycle.shutdown('test');
 });
+
+test('lifecycle passes discovered provider context window into agent loop config', async () => {
+  let capturedLoopConfig = null;
+
+  const lifecycle = createAgentLifecycle({
+    loadConfig: async () => ({
+      agent: {
+        maxToolCallsPerStep: 5,
+      },
+    }),
+    createBus: () => ({
+      on() {
+        return () => {};
+      },
+      emit: async () => {},
+      getQueueDepth() {
+        return 0;
+      },
+    }),
+    createProvider: () => ({
+      chatCompletion: async () => ({ text: '', usage: {}, finishReason: 'stop' }),
+      discoverModelCapabilities: async () => ({ model: 'test-model', contextWindow: 8192 }),
+    }),
+    createParser: () => ({ parse: () => ({ kind: 'final', text: '' }) }),
+    createWorkflowRegistry: () => ({ async loadAll() {}, get() { return null; } }),
+    createWorkflowEngine: () => ({ start() {}, stop() {} }),
+    createSkillLoader: () => ({}),
+    createSessionMemory: () => ({}),
+    createWorkspaceManager: () => ({ async ensureWorkspace() {} }),
+    createToolRegistry: () => ({
+      async registerBuiltIns() {},
+      execute: async () => ({ ok: true }),
+    }),
+    createAgentLoop: (config) => {
+      capturedLoopConfig = config;
+      return {
+        start() {},
+        stop() {},
+      };
+    },
+    createIpcServer: () => ({
+      async start() {},
+      async stopAccepting() {},
+      async disconnectAllClients() {},
+    }),
+    createScheduler: () => ({
+      async restore() {},
+      async start() {},
+      async stop() {},
+    }),
+  });
+
+  await lifecycle.start();
+  await lifecycle.shutdown('test');
+
+  assert.ok(capturedLoopConfig);
+  assert.equal(capturedLoopConfig.contextLimit, 8192);
+});

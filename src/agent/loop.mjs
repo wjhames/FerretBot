@@ -1,4 +1,8 @@
-import { DEFAULT_CONTEXT_LIMIT, createAgentContext } from './context.mjs';
+import {
+  DEFAULT_CONTEXT_LIMIT,
+  deriveOutputReserve,
+  createAgentContext,
+} from './context.mjs';
 import { buildSystemPrompt } from './prompt.mjs';
 
 const WORKFLOW_STEP_START_EVENT = 'workflow:step:start';
@@ -107,6 +111,7 @@ export class AgentLoop {
   #skillLoader;
   #sessionMemory;
   #maxTokens;
+  #contextLimit;
   #maxToolCallsPerStep;
   #retryLimit;
   #unsubscribe;
@@ -123,7 +128,10 @@ export class AgentLoop {
       workflowEngine = null,
       skillLoader = null,
       sessionMemory = null,
-      maxTokens = 1024,
+      maxTokens,
+      contextLimit = DEFAULT_CONTEXT_LIMIT,
+      outputReserve,
+      layerBudgets,
       maxToolCallsPerStep = 10,
       retryLimit = DEFAULT_RETRY_LIMIT,
       buildMessages,
@@ -147,8 +155,16 @@ export class AgentLoop {
       throw new TypeError('AgentLoop requires a parser with parse().');
     }
 
-    if (!Number.isInteger(maxTokens) || maxTokens <= 0) {
+    if (maxTokens != null && (!Number.isInteger(maxTokens) || maxTokens <= 0)) {
       throw new TypeError('maxTokens must be a positive integer.');
+    }
+
+    if (!Number.isInteger(contextLimit) || contextLimit <= 0) {
+      throw new TypeError('contextLimit must be a positive integer.');
+    }
+
+    if (outputReserve != null && (!Number.isInteger(outputReserve) || outputReserve <= 0)) {
+      throw new TypeError('outputReserve must be a positive integer when provided.');
     }
 
     if (!Number.isInteger(maxToolCallsPerStep) || maxToolCallsPerStep <= 0) {
@@ -167,7 +183,10 @@ export class AgentLoop {
     this.#workflowEngine = workflowEngine;
     this.#skillLoader = skillLoader;
     this.#sessionMemory = sessionMemory;
-    this.#maxTokens = maxTokens;
+    this.#contextLimit = contextLimit;
+    this.#maxTokens = Number.isInteger(maxTokens)
+      ? maxTokens
+      : (Number.isInteger(outputReserve) ? outputReserve : deriveOutputReserve(contextLimit));
     this.#maxToolCallsPerStep = maxToolCallsPerStep;
     this.#retryLimit = retryLimit;
     this.#unsubscribe = null;
@@ -176,6 +195,9 @@ export class AgentLoop {
     this.#contextManager = this.#createContextManager({
       contextManager,
       buildMessages,
+      contextLimit,
+      outputReserve,
+      layerBudgets,
       maxTokens,
     });
   }
@@ -203,13 +225,24 @@ export class AgentLoop {
     this.#unsubscribe = null;
   }
 
-  #createContextManager({ contextManager, buildMessages, maxTokens }) {
+  #createContextManager({
+    contextManager,
+    buildMessages,
+    contextLimit,
+    outputReserve,
+    layerBudgets,
+    maxTokens,
+  }) {
+    const effectiveOutputReserve = Number.isInteger(maxTokens)
+      ? maxTokens
+      : (Number.isInteger(outputReserve) ? outputReserve : deriveOutputReserve(contextLimit));
+
     if (buildMessages) {
       return {
         buildMessages(input) {
           return {
             messages: buildMessages(input.event),
-            maxOutputTokens: maxTokens,
+            maxOutputTokens: effectiveOutputReserve,
           };
         },
       };
@@ -220,8 +253,9 @@ export class AgentLoop {
     }
 
     return createAgentContext({
-      contextLimit: Math.max(DEFAULT_CONTEXT_LIMIT, maxTokens + 1),
-      outputReserve: maxTokens,
+      contextLimit,
+      outputReserve: effectiveOutputReserve,
+      layerBudgets,
     });
   }
 

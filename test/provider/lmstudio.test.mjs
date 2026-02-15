@@ -157,3 +157,36 @@ test('chatCompletion rejects calls without explicit maxTokens', async () => {
     /maxTokens must be a positive integer/,
   );
 });
+
+test('discoverModelCapabilities returns model context window and caches result', async () => {
+  const calls = [];
+  const provider = createLmStudioProvider({
+    model: 'openai/gpt-oss-20b',
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        async json() {
+          return {
+            data: [
+              { id: 'other-model', context_length: 4096 },
+              { id: 'openai/gpt-oss-20b', context_length: 32768 },
+            ],
+          };
+        },
+      };
+    },
+  });
+
+  const first = await provider.discoverModelCapabilities();
+  const second = await provider.discoverModelCapabilities();
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'http://192.168.1.7:1234/v1/models');
+  assert.equal(calls[0].init.method, 'GET');
+  assert.deepEqual(first, {
+    model: 'openai/gpt-oss-20b',
+    contextWindow: 32768,
+  });
+  assert.deepEqual(second, first);
+});

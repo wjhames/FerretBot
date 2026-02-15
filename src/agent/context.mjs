@@ -1,7 +1,9 @@
 import { buildSystemPrompt } from './prompt.mjs';
 
 export const DEFAULT_CONTEXT_LIMIT = 32_000;
-export const DEFAULT_OUTPUT_RESERVE = 3_000;
+export const DEFAULT_OUTPUT_RESERVE = 2_048;
+export const MIN_OUTPUT_RESERVE = 256;
+export const MAX_OUTPUT_RESERVE = 4_096;
 
 export const DEFAULT_LAYER_BUDGETS = Object.freeze({
   system: 800,
@@ -9,6 +11,20 @@ export const DEFAULT_LAYER_BUDGETS = Object.freeze({
   skills: 3_000,
   prior: 2_000,
   conversation: 4_000,
+});
+export const DEFAULT_LAYER_WEIGHTS = Object.freeze({
+  system: 0.14,
+  step: 0.34,
+  skills: 0.20,
+  prior: 0.14,
+  conversation: 0.18,
+});
+export const DEFAULT_LAYER_MINIMUMS = Object.freeze({
+  system: 256,
+  step: 512,
+  skills: 256,
+  prior: 192,
+  conversation: 256,
 });
 
 const LAYER_NAME_ALIASES = Object.freeze({
@@ -76,9 +92,18 @@ function scaleFixedLayerBudgets(budgets, inputBudget) {
 }
 
 function normalizeLayerBudgetConfig(rawBudgets, inputBudget) {
-  const sanitized = { ...DEFAULT_LAYER_BUDGETS };
   const mapped = mapLayerBudgetKeys(rawBudgets);
   const normalizedInputBudget = Math.max(0, inputBudget);
+  const hasExplicitBudgets = Object.keys(mapped).some((name) =>
+    Object.prototype.hasOwnProperty.call(DEFAULT_LAYER_BUDGETS, name),
+  );
+  const sanitized = hasExplicitBudgets
+    ? { ...DEFAULT_LAYER_BUDGETS }
+    : deriveLayerBudgetsFromInputBudget(normalizedInputBudget);
+
+  if (!hasExplicitBudgets) {
+    return sanitized;
+  }
 
   for (const [name, value] of Object.entries(mapped)) {
     if (!Object.prototype.hasOwnProperty.call(DEFAULT_LAYER_BUDGETS, name)) {
@@ -89,6 +114,55 @@ function normalizeLayerBudgetConfig(rawBudgets, inputBudget) {
   }
 
   return scaleFixedLayerBudgets(sanitized, normalizedInputBudget);
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function deriveOutputReserve(contextLimit = DEFAULT_CONTEXT_LIMIT) {
+  const normalizedContextLimit = Number.isFinite(contextLimit) && contextLimit > 0
+    ? Math.floor(contextLimit)
+    : DEFAULT_CONTEXT_LIMIT;
+  const target = Math.ceil(normalizedContextLimit * 0.15);
+  return clamp(target, MIN_OUTPUT_RESERVE, MAX_OUTPUT_RESERVE);
+}
+
+function deriveLayerBudgetsFromInputBudget(inputBudget) {
+  const normalizedInputBudget = Math.max(0, Math.floor(inputBudget));
+  if (normalizedInputBudget <= 0) {
+    return {
+      system: 0,
+      step: 0,
+      skills: 0,
+      prior: 0,
+      conversation: 0,
+    };
+  }
+
+  const weights = DEFAULT_LAYER_WEIGHTS;
+  const minimums = DEFAULT_LAYER_MINIMUMS;
+  const budgets = {};
+  let assigned = 0;
+
+  for (const name of Object.keys(DEFAULT_LAYER_BUDGETS)) {
+    const weighted = Math.floor(normalizedInputBudget * (weights[name] ?? 0));
+    const bounded = clamp(weighted, 0, normalizedInputBudget);
+    budgets[name] = Math.max(minimums[name] ?? 0, bounded);
+    assigned += budgets[name];
+  }
+
+  if (assigned > normalizedInputBudget) {
+    const fixed = scaleFixedLayerBudgets(budgets, normalizedInputBudget);
+    const fixedTotal = fixed.system + fixed.step + fixed.skills + fixed.prior + fixed.conversation;
+    if (fixedTotal > normalizedInputBudget) {
+      fixed.conversation = Math.max(0, normalizedInputBudget - (fixed.system + fixed.step + fixed.skills + fixed.prior));
+    }
+    return fixed;
+  }
+
+  budgets.conversation += normalizedInputBudget - assigned;
+  return budgets;
 }
 function toText(value) {
   if (typeof value === 'string') {
@@ -253,7 +327,7 @@ export class AgentContext {
 
   constructor(options = {}) {
     this.#contextLimit = options.contextLimit ?? DEFAULT_CONTEXT_LIMIT;
-    this.#outputReserve = options.outputReserve ?? DEFAULT_OUTPUT_RESERVE;
+    this.#outputReserve = options.outputReserve ?? deriveOutputReserve(this.#contextLimit);
     const inputBudget = Math.max(0, this.#contextLimit - this.#outputReserve);
     this.#layerBudgets = normalizeLayerBudgetConfig(options.layerBudgets ?? {}, inputBudget);
     this.#tokenEstimatorConfig = {

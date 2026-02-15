@@ -20,6 +20,7 @@ export class LmStudioProvider {
   #defaultTopP;
   #timeoutMs;
   #fetch;
+  #modelCapabilities;
 
   constructor(options = {}) {
     const {
@@ -41,6 +42,7 @@ export class LmStudioProvider {
     this.#defaultTopP = topP;
     this.#timeoutMs = timeoutMs;
     this.#fetch = fetchImpl;
+    this.#modelCapabilities = null;
   }
 
   getConfig() {
@@ -93,7 +95,11 @@ export class LmStudioProvider {
       }
     }
 
-    const response = await this.#fetchJson('/chat/completions', body, signal);
+    const response = await this.#fetchJson('/chat/completions', {
+      method: 'POST',
+      body,
+      signal,
+    });
     const firstChoice = response.choices?.[0] ?? null;
     const toolCalls = normalizeToolCalls(firstChoice);
 
@@ -108,18 +114,48 @@ export class LmStudioProvider {
     };
   }
 
-  async #fetchJson(path, body, signal) {
+  async discoverModelCapabilities(options = {}) {
+    if (this.#modelCapabilities && !options.force) {
+      return this.#modelCapabilities;
+    }
+
+    const response = await this.#fetchJson('/models', {
+      method: 'GET',
+      signal: options.signal,
+    });
+    const models = Array.isArray(response?.data) ? response.data : [];
+    const selected = models.find((model) => model?.id === this.#defaultModel) ?? models[0] ?? {};
+    const contextWindow = extractContextWindow(selected);
+
+    this.#modelCapabilities = contextWindow
+      ? { model: selected?.id ?? this.#defaultModel, contextWindow }
+      : { model: selected?.id ?? this.#defaultModel };
+
+    return this.#modelCapabilities;
+  }
+
+  async #fetchJson(path, options = {}) {
+    const {
+      method = 'POST',
+      body,
+      signal,
+    } = options;
     const requestSignal = signal ?? AbortSignal.timeout(this.#timeoutMs);
     const url = `${this.#baseUrl}${path}`;
-
-    const response = await this.#fetch(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(body),
+    const headers = {
+      'content-type': 'application/json',
+    };
+    const requestOptions = {
+      method,
+      headers,
       signal: requestSignal,
-    });
+    };
+
+    if (body != null) {
+      requestOptions.body = JSON.stringify(body);
+    }
+
+    const response = await this.#fetch(url, requestOptions);
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -148,6 +184,28 @@ export class LmStudioProvider {
       }
     }
   }
+}
+
+function extractContextWindow(model = {}) {
+  const candidates = [
+    model.context_length,
+    model.context_window,
+    model.max_context_length,
+    model.contextLength,
+    model.maxContextLength,
+    model.n_ctx,
+    model?.metadata?.context_length,
+    model?.metadata?.context_window,
+    model?.metadata?.n_ctx,
+  ];
+
+  for (const candidate of candidates) {
+    if (Number.isFinite(candidate) && candidate > 0) {
+      return Math.floor(candidate);
+    }
+  }
+
+  return null;
 }
 
 export function createLmStudioProvider(options) {

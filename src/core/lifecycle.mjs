@@ -51,6 +51,18 @@ async function drainBusQueue(bus, { timeoutMs, pollMs }) {
   }
 }
 
+async function discoverProviderCapabilities(provider) {
+  if (!provider || typeof provider.discoverModelCapabilities !== 'function') {
+    return null;
+  }
+
+  try {
+    return await provider.discoverModelCapabilities();
+  } catch {
+    return null;
+  }
+}
+
 function defaultCreateToolRegistry({ config = {}, bus } = {}) {
   return createToolRegistry({
     cwd: config.tools?.cwd,
@@ -150,6 +162,7 @@ export class AgentLifecycle {
 
     const bus = this.#createBus(config);
     const provider = this.#createProvider(config);
+    const providerCapabilities = await discoverProviderCapabilities(provider);
     const parser = this.#createParser(config);
 
     const workflowRegistry = this.#createWorkflowRegistry({ config });
@@ -183,6 +196,9 @@ export class AgentLifecycle {
       sessionMemory,
       workspaceManager,
       maxTokens: config.agent?.maxTokens,
+      contextLimit: config.agent?.contextLimit ?? providerCapabilities?.contextWindow,
+      outputReserve: config.agent?.outputReserve,
+      layerBudgets: config.agent?.layerBudgets,
       maxToolCallsPerStep: config.agent?.maxToolCallsPerStep,
     });
 
