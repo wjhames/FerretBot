@@ -466,7 +466,19 @@ test('wait_for_input steps pause run, capture user input, and continue', async (
     const run = await engine.startRun('input-wf');
     assert.equal(run.state, 'waiting_input');
     assert.ok(bus.eventsOfType('workflow:needs_input').length >= 1);
-    assert.ok(engine.hasPendingInput());
+    assert.equal(engine.hasPendingInput(), false);
+
+    await bus.emit({
+      type: 'user:input',
+      channel: 'tui',
+      sessionId: 's-input',
+      content: { text: 'hello' },
+    });
+
+    assert.equal(run.state, 'waiting_input');
+    assert.equal(run.args.user_name, undefined);
+    assert.equal(run.args.sessionId, 's-input');
+    assert.equal(engine.hasPendingInput('s-input'), true);
 
     await bus.emit({
       type: 'user:input',

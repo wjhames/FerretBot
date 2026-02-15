@@ -193,7 +193,16 @@ export class WorkflowEngine {
   }
 
   hasPendingInput(sessionId = null) {
-    return this.#findRunWaitingForInput(sessionId) != null;
+    if (!sessionId) {
+      return false;
+    }
+
+    return this.listRuns().some((run) =>
+      run.state === RUN_STATE.waitingInput
+      && run.args
+      && typeof run.args === 'object'
+      && run.args.sessionId === sessionId,
+    );
   }
 
   async #handleStepComplete(event) {
@@ -453,13 +462,48 @@ export class WorkflowEngine {
       return;
     }
 
-    const inputText = coerceInputText(event);
-    if (!inputText) {
+    if (!run.args || typeof run.args !== 'object') {
+      run.args = {};
+    }
+
+    const incomingSessionId = event?.sessionId ?? null;
+    const boundSessionId = run.args.sessionId ?? null;
+    if (!boundSessionId && incomingSessionId) {
+      run.args.sessionId = incomingSessionId;
+      run.updatedAt = formatIsoNow();
+      await this.#persistRun(run);
+
+      event.__workflowConsumed = true;
+
+      const prompt = String(workflowStep?.prompt ?? '').trim();
+      await this.#bus.emit({
+        type: 'workflow:needs_input',
+        sessionId: incomingSessionId,
+        content: {
+          runId: run.id,
+          stepId: workflowStep.id,
+          prompt,
+          responseKey: workflowStep.responseKey,
+        },
+      });
+      await this.#bus.emit({
+        type: 'agent:response',
+        sessionId: incomingSessionId,
+        content: {
+          text: prompt,
+          finishReason: 'workflow_input',
+        },
+      });
       return;
     }
 
-    if (!run.args || typeof run.args !== 'object') {
-      run.args = {};
+    if (boundSessionId && incomingSessionId && boundSessionId !== incomingSessionId) {
+      return;
+    }
+
+    const inputText = coerceInputText(event);
+    if (!inputText) {
+      return;
     }
 
     run.args[workflowStep.responseKey] = inputText;
@@ -493,9 +537,6 @@ export class WorkflowEngine {
         !run.args?.sessionId || run.args.sessionId === sessionId,
       );
       if (matched) {
-        if (!matched.args?.sessionId) {
-          matched.args = { ...(matched.args ?? {}), sessionId };
-        }
         return matched;
       }
     }
