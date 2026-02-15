@@ -9,20 +9,38 @@ export const DEFAULT_LAYER_BUDGETS = Object.freeze({
   system: 800,
   step: 4_000,
   skills: 3_000,
+  identity: 800,
+  soul: 1_000,
+  user: 800,
+  boot: 600,
+  memory: 1_200,
+  bootstrap: 1_000,
   prior: 2_000,
   conversation: 4_000,
 });
 export const DEFAULT_LAYER_WEIGHTS = Object.freeze({
-  system: 0.14,
-  step: 0.34,
-  skills: 0.20,
-  prior: 0.14,
-  conversation: 0.18,
+  system: 0.08,
+  step: 0.25,
+  skills: 0.10,
+  identity: 0.08,
+  soul: 0.10,
+  user: 0.08,
+  boot: 0.06,
+  memory: 0.10,
+  bootstrap: 0.07,
+  prior: 0.08,
+  conversation: 0.10,
 });
 export const DEFAULT_LAYER_MINIMUMS = Object.freeze({
   system: 256,
   step: 512,
   skills: 256,
+  identity: 128,
+  soul: 192,
+  user: 128,
+  boot: 96,
+  memory: 128,
+  bootstrap: 128,
   prior: 192,
   conversation: 256,
 });
@@ -32,10 +50,16 @@ const LAYER_NAME_ALIASES = Object.freeze({
   taskScope: 'step',
   stepScope: 'step',
   skillContent: 'skills',
+  identityContext: 'identity',
+  soulContext: 'soul',
+  userContext: 'user',
+  bootContext: 'boot',
+  memoryContext: 'memory',
+  bootstrapContext: 'bootstrap',
   priorContext: 'prior',
 });
 
-const FIXED_LAYER_NAMES = ['system', 'step', 'skills', 'prior'];
+const FIXED_LAYER_NAMES = ['system', 'step', 'skills', 'identity', 'soul', 'user', 'boot', 'memory', 'bootstrap', 'prior'];
 
 const DEFAULT_TOKEN_ESTIMATOR_CONFIG = Object.freeze({
   charsPerToken: 4,
@@ -139,6 +163,12 @@ function deriveLayerBudgetsFromInputBudget(inputBudget) {
       system: 0,
       step: 0,
       skills: 0,
+      identity: 0,
+      soul: 0,
+      user: 0,
+      boot: 0,
+      memory: 0,
+      bootstrap: 0,
       prior: 0,
       conversation: 0,
     };
@@ -158,9 +188,15 @@ function deriveLayerBudgetsFromInputBudget(inputBudget) {
 
   if (assigned > normalizedInputBudget) {
     const fixed = scaleFixedLayerBudgets(budgets, normalizedInputBudget);
-    const fixedTotal = fixed.system + fixed.step + fixed.skills + fixed.prior + fixed.conversation;
+    const fixedTotal = Object.keys(DEFAULT_LAYER_BUDGETS).reduce(
+      (sum, name) => sum + (fixed[name] ?? 0),
+      0,
+    );
     if (fixedTotal > normalizedInputBudget) {
-      fixed.conversation = Math.max(0, normalizedInputBudget - (fixed.system + fixed.step + fixed.skills + fixed.prior));
+      const nonConversationTotal = Object.keys(DEFAULT_LAYER_BUDGETS)
+        .filter((name) => name !== 'conversation')
+        .reduce((sum, name) => sum + (fixed[name] ?? 0), 0);
+      fixed.conversation = Math.max(0, normalizedInputBudget - nonConversationTotal);
     }
     return fixed;
   }
@@ -314,6 +350,7 @@ function buildLayerText(options = {}) {
     step,
     extraRules = '',
     tools = [],
+    promptLayers = {},
     skillContent = '',
     priorSteps = [],
     conversationSummary = '',
@@ -346,6 +383,16 @@ function buildLayerText(options = {}) {
     system: systemText,
     step: stepScopeParts.join('\n\n'),
     skills: toText(skillContent).trim(),
+    identity: toText(promptLayers.identity).trim(),
+    soul: toText(promptLayers.soul).trim(),
+    user: toText(promptLayers.user).trim(),
+    boot: toText(promptLayers.boot).trim(),
+    memory: [
+      toText(promptLayers.memory).trim(),
+      toText(promptLayers.systemMemory).trim(),
+      toText(promptLayers.dailyMemory).trim(),
+    ].filter((value) => value.length > 0).join('\n\n'),
+    bootstrap: toText(promptLayers.bootstrap).trim(),
     prior: priorParts.join('\n\n'),
   };
 }
@@ -418,7 +465,7 @@ export class AgentContext {
     const inputBudget = this.#contextLimit - this.#outputReserve;
     const layers = buildLayerText(input);
 
-    const allocationOrder = ['system', 'step', 'skills', 'prior'];
+    const allocationOrder = ['system', 'step', 'skills', 'identity', 'soul', 'user', 'boot', 'memory', 'bootstrap', 'prior'];
     const rendered = {};
     const tokenUsage = {
       totalInputBudget: inputBudget,
@@ -462,6 +509,30 @@ export class AgentContext {
 
     if (rendered.skills) {
       messages.push({ role: 'system', content: `Skill content:\n${rendered.skills}` });
+    }
+
+    if (rendered.identity) {
+      messages.push({ role: 'system', content: `Identity:\n${rendered.identity}` });
+    }
+
+    if (rendered.soul) {
+      messages.push({ role: 'system', content: `Soul:\n${rendered.soul}` });
+    }
+
+    if (rendered.user) {
+      messages.push({ role: 'system', content: `User:\n${rendered.user}` });
+    }
+
+    if (rendered.boot) {
+      messages.push({ role: 'system', content: `Boot:\n${rendered.boot}` });
+    }
+
+    if (rendered.memory) {
+      messages.push({ role: 'system', content: `Memory:\n${rendered.memory}` });
+    }
+
+    if (rendered.bootstrap) {
+      messages.push({ role: 'system', content: `Bootstrap:\n${rendered.bootstrap}` });
     }
 
     if (rendered.prior) {

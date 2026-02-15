@@ -18,6 +18,12 @@ test('context build enforces input budget and assembles deterministic layers', (
       system: 280,
       step: 120,
       skills: 80,
+      identity: 0,
+      soul: 0,
+      user: 0,
+      boot: 0,
+      memory: 0,
+      bootstrap: 0,
       prior: 80,
       conversation: 120,
     },
@@ -132,12 +138,18 @@ test('helper functions provide stable token and compaction behavior', () => {
 
 test('layer budgets accept alias names and preserve configured values', () => {
   const context = createAgentContext({
-    contextLimit: 3_000,
+    contextLimit: 7_000,
     outputReserve: 500,
     layerBudgets: {
       systemPrompt: 700,
       taskScope: 1_100,
       skillContent: 400,
+      identityContext: 120,
+      soulContext: 140,
+      userContext: 160,
+      bootContext: 180,
+      memoryContext: 200,
+      bootstrapContext: 220,
       priorContext: 200,
       conversation: 800,
     },
@@ -147,6 +159,12 @@ test('layer budgets accept alias names and preserve configured values', () => {
   assert.equal(budgets.system, 700);
   assert.equal(budgets.step, 1_100);
   assert.equal(budgets.skills, 400);
+  assert.equal(budgets.identity, 120);
+  assert.equal(budgets.soul, 140);
+  assert.equal(budgets.user, 160);
+  assert.equal(budgets.boot, 180);
+  assert.equal(budgets.memory, 200);
+  assert.equal(budgets.bootstrap, 220);
   assert.equal(budgets.prior, 200);
   assert.equal(budgets.conversation, 800);
 });
@@ -159,12 +177,27 @@ test('layer budgets scale when fixed layers exceed the input budget', () => {
       system: 400,
       step: 400,
       skills: 400,
+      identity: 400,
+      soul: 400,
+      user: 400,
+      boot: 400,
+      memory: 400,
+      bootstrap: 400,
       prior: 400,
     },
   });
 
   const budgets = context.getLayerBudgets();
-  const totalFixed = budgets.system + budgets.step + budgets.skills + budgets.prior;
+  const totalFixed = budgets.system
+    + budgets.step
+    + budgets.skills
+    + budgets.identity
+    + budgets.soul
+    + budgets.user
+    + budgets.boot
+    + budgets.memory
+    + budgets.bootstrap
+    + budgets.prior;
   assert.equal(totalFixed, 1_000);
   assert.ok(budgets.system <= 400);
   assert.ok(budgets.step <= 400);

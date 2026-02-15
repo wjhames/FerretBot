@@ -430,6 +430,7 @@ export class AgentLoop {
       mode: isStepEvent ? 'step' : 'interactive',
       userInput: coerceInputText(event),
       extraRules: promptContext.extraRules,
+      promptLayers: promptContext.layers,
       step: isStepEvent ? (event.content?.step ?? null) : null,
       conversation: conversationContext.turns,
       conversationSummary: conversationContext.summary,
@@ -448,16 +449,19 @@ export class AgentLoop {
 
   async #loadPromptContext() {
     if (!this.#workspaceBootstrap || typeof this.#workspaceBootstrap.loadPromptContext !== 'function') {
-      return { extraRules: '' };
+      return { extraRules: '', layers: {} };
     }
 
     try {
       const loaded = await this.#workspaceBootstrap.loadPromptContext();
       return {
         extraRules: typeof loaded?.extraRules === 'string' ? loaded.extraRules : '',
+        layers: loaded && typeof loaded.layers === 'object' && loaded.layers
+          ? loaded.layers
+          : {},
       };
     } catch {
-      return { extraRules: '' };
+      return { extraRules: '', layers: {} };
     }
   }
 

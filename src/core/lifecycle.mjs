@@ -102,7 +102,7 @@ function defaultCreateWorkspaceManager({ config = {} }) {
   });
 }
 
-function defaultCreateWorkspaceBootstrapManager({ workspaceManager } = {}) {
+function defaultCreateWorkspaceBootstrapManager({ config = {}, workspaceManager } = {}) {
   if (
     !workspaceManager
     || typeof workspaceManager.ensureTextFile !== 'function'
@@ -113,6 +113,7 @@ function defaultCreateWorkspaceBootstrapManager({ workspaceManager } = {}) {
 
   return createWorkspaceBootstrapManager({
     workspaceManager,
+    fileNames: config.workspace?.promptFiles,
   });
 }
 
