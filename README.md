@@ -71,7 +71,3 @@ npm run tui
 ```bash
 npm test
 ```
-
-More architecture details:
-
-- `architecture/README.md`
