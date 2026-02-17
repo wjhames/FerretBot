@@ -58,7 +58,7 @@ npm run tui
 - IPC socket: `~/.ferretbot/agent.sock`
 - Sessions: `~/.ferretbot/sessions`
 - Workflow runs: `~/.ferretbot/workflow-runs`
-- Workspace: `~/.ferretbot/workspace`
+- Workspace: current working directory (`process.cwd()`) unless `workspace.path` is set
 
 ## Workflow + Skills Notes
 

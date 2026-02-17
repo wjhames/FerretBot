@@ -76,17 +76,17 @@ function defaultCreateToolRegistry({ config = {}, bus, workspaceManager } = {}) 
     rootDirs.push(config.tools.rootDir);
   }
 
-  if (typeof launchRoot === 'string' && launchRoot.trim().length > 0) {
-    rootDirs.push(launchRoot);
-  }
-
   if (typeof workspaceRoot === 'string' && workspaceRoot.trim().length > 0) {
     rootDirs.push(workspaceRoot);
   }
 
+  if (rootDirs.length === 0 && typeof launchRoot === 'string' && launchRoot.trim().length > 0) {
+    rootDirs.push(launchRoot);
+  }
+
   return createToolRegistry({
-    cwd: config.tools?.cwd ?? workspaceManager?.baseDir,
-    rootDir: config.tools?.rootDir ?? workspaceManager?.baseDir,
+    cwd: config.tools?.cwd ?? config.tools?.rootDir ?? workspaceManager?.baseDir ?? launchRoot,
+    rootDir: config.tools?.rootDir ?? workspaceManager?.baseDir ?? launchRoot,
     rootDirs,
     maxReadBytes: config.tools?.maxReadBytes,
     bus,

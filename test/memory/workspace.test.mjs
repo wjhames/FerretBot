@@ -56,3 +56,8 @@ test('cleans entries older than threshold', async () => {
     .catch((err) => (err && err.code === 'ENOENT' ? false : Promise.reject(err)));
   assert.ok(!exists);
 });
+
+test('defaults workspace baseDir to current working directory', async () => {
+  const manager = new WorkspaceManager();
+  assert.equal(manager.baseDir, path.resolve(process.cwd()));
+});
