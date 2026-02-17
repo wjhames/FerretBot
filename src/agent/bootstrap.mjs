@@ -38,6 +38,8 @@ export class WorkspaceBootstrapManager {
   #now;
   #initialized;
   #fileNames;
+  #workDir;
+  #agentStateDir;
 
   constructor(options = {}) {
     const workspaceManager = options.workspaceManager;
@@ -49,6 +51,12 @@ export class WorkspaceBootstrapManager {
     this.#now = typeof options.now === 'function' ? options.now : () => new Date();
     this.#initialized = false;
     this.#fileNames = normalizeFileNames(options.fileNames);
+    this.#workDir = typeof options.workDir === 'string' && options.workDir.trim().length > 0
+      ? options.workDir
+      : process.cwd();
+    this.#agentStateDir = typeof options.agentStateDir === 'string' && options.agentStateDir.trim().length > 0
+      ? options.agentStateDir
+      : this.#workspaceManager.baseDir;
   }
 
   async ensureInitialized() {
@@ -105,7 +113,13 @@ export class WorkspaceBootstrapManager {
 
     return {
       bootstrapState: null,
-      extraRules: '',
+      extraRules: [
+        `Working directory: ${this.#workDir}`,
+        `Agent state directory: ${this.#agentStateDir}`,
+        'Project files are in the working directory.',
+        'Agent instruction/memory files are under the agent state directory (.ferretbot).',
+        'When updating agent memory or profile files, use the .ferretbot/ path prefix.',
+      ].join('\n'),
       layers,
     };
   }

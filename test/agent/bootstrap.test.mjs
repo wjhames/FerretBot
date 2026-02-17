@@ -22,6 +22,8 @@ test('bootstrap manager does not scaffold prompt files', async () => {
     const bootstrap = createWorkspaceBootstrapManager({
       workspaceManager,
       now: () => new Date('2026-02-15T12:00:00.000Z'),
+      workDir: '/tmp/project-root',
+      agentStateDir: baseDir,
     });
 
     await bootstrap.ensureInitialized();
@@ -51,6 +53,8 @@ test('loadPromptContext reads existing local files only', async () => {
     const bootstrap = createWorkspaceBootstrapManager({
       workspaceManager,
       now: () => new Date('2026-02-15T12:00:00.000Z'),
+      workDir: '/tmp/project-root',
+      agentStateDir: baseDir,
     });
 
     await workspaceManager.writeTextFile('AGENTS.md', '# Agents');
@@ -75,6 +79,10 @@ test('loadPromptContext reads existing local files only', async () => {
     assert.match(context.layers.dailyMemory, /Yesterday memory/);
     assert.match(context.layers.dailyMemory, /Today memory/);
     assert.equal(context.layers.bootstrap, '');
-    assert.equal(context.extraRules, '');
+    assert.match(context.extraRules, /Working directory: \/tmp\/project-root/);
+    assert.match(context.extraRules, new RegExp(`Agent state directory: ${baseDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(context.extraRules, /Project files are in the working directory/);
+    assert.match(context.extraRules, /Agent instruction\/memory files are under the agent state directory/);
+    assert.match(context.extraRules, /use the \.ferretbot\/ path prefix/);
   });
 });

@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { DEFAULT_AGENT_DIR } from '../core/config-defaults.mjs';
 
-const DEFAULT_WORKSPACE_DIR = path.resolve(process.cwd(), '.ferretbot');
+const DEFAULT_WORKSPACE_DIR = DEFAULT_AGENT_DIR;
 const DEFAULT_CLEANUP_THRESHOLD = 7 * 24 * 60 * 60 * 1000;
 
 async function ensureDir(directory) {

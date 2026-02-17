@@ -1,8 +1,10 @@
-import path from 'node:path';
+import { resolveRuntimePaths } from './paths.mjs';
 
-export const DEFAULT_AGENT_DIR = path.resolve(process.cwd(), '.ferretbot');
-export const DEFAULT_AGENT_CONFIG_PATH = path.join(DEFAULT_AGENT_DIR, 'config.json');
-export const DEFAULT_AGENT_SOCKET_PATH = path.join(DEFAULT_AGENT_DIR, 'agent.sock');
+const runtimePaths = resolveRuntimePaths();
+
+export const DEFAULT_AGENT_DIR = runtimePaths.agentDir;
+export const DEFAULT_AGENT_CONFIG_PATH = runtimePaths.configPath;
+export const DEFAULT_AGENT_SOCKET_PATH = runtimePaths.socketPath;
 
 export const DEFAULT_LMSTUDIO_BASE_URL = 'http://192.168.1.7:1234/v1';
 export const DEFAULT_LMSTUDIO_MODEL = 'openai/gpt-oss-20b';

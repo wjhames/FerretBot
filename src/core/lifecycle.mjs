@@ -69,25 +69,25 @@ function defaultCreateToolRegistry({ config = {}, bus, workspaceManager } = {}) 
     ? config.tools.rootDirs.filter((value) => typeof value === 'string' && value.trim().length > 0)
     : [];
   const workspaceRoot = workspaceManager?.baseDir;
-  const launchRoot = process.cwd();
+  const workRoot = process.cwd();
   const rootDirs = [...configuredRootDirs];
 
   if (typeof config.tools?.rootDir === 'string' && config.tools.rootDir.trim().length > 0) {
     rootDirs.push(config.tools.rootDir);
   }
 
+  if (typeof workRoot === 'string' && workRoot.trim().length > 0) {
+    rootDirs.push(workRoot);
+  }
+
   if (typeof workspaceRoot === 'string' && workspaceRoot.trim().length > 0) {
     rootDirs.push(workspaceRoot);
   }
 
-  if (rootDirs.length === 0 && typeof launchRoot === 'string' && launchRoot.trim().length > 0) {
-    rootDirs.push(launchRoot);
-  }
-
   return createToolRegistry({
-    cwd: config.tools?.cwd ?? config.tools?.rootDir ?? workspaceManager?.baseDir ?? launchRoot,
-    rootDir: config.tools?.rootDir ?? workspaceManager?.baseDir ?? launchRoot,
-    rootDirs,
+    cwd: config.tools?.cwd ?? config.tools?.rootDir ?? workRoot,
+    rootDir: config.tools?.rootDir ?? workRoot,
+    rootDirs: [...new Set(rootDirs)],
     maxReadBytes: config.tools?.maxReadBytes,
     bus,
   });
@@ -141,6 +141,8 @@ function defaultCreateWorkspaceBootstrapManager({ config = {}, workspaceManager 
   return createWorkspaceBootstrapManager({
     workspaceManager,
     fileNames: config.workspace?.promptFiles,
+    workDir: process.cwd(),
+    agentStateDir: workspaceManager?.baseDir,
   });
 }
 

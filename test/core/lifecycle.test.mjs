@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 import { createAgentLifecycle } from '../../src/core/lifecycle.mjs';
 
@@ -283,6 +286,49 @@ test('lifecycle default tool registry registers built-in tools', async () => {
   assert.deepEqual(toolNames, ['bash', 'read', 'write']);
 
   await lifecycle.shutdown('test');
+});
+
+test('lifecycle default tool registry reads relative files from current working directory', async () => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ferretbot-state-'));
+
+  const lifecycle = createAgentLifecycle({
+    loadConfig: async () => ({}),
+    createProvider: () => ({ chatCompletion: async () => ({ text: '', usage: {}, finishReason: 'stop' }) }),
+    createParser: () => ({ parse: () => ({ kind: 'final', text: '' }) }),
+    createWorkflowRegistry: () => ({ async loadAll() {}, get() { return null; } }),
+    createWorkflowEngine: () => ({ start() {}, stop() {} }),
+    createSkillLoader: () => ({}),
+    createSessionMemory: () => ({}),
+    createWorkspaceManager: () => ({
+      baseDir: stateDir,
+      async ensureWorkspace() {},
+      readTextFile: async () => '',
+    }),
+    createAgentLoop: () => ({ start() {}, stop() {} }),
+    createIpcServer: () => ({
+      async start() {},
+      async stopAccepting() {},
+      async disconnectAllClients() {},
+    }),
+    createScheduler: () => ({
+      async restore() {},
+      async start() {},
+      async stop() {},
+    }),
+  });
+
+  try {
+    const runtime = await lifecycle.start();
+    const readResult = await runtime.toolRegistry.execute({
+      name: 'read',
+      arguments: { path: 'package.json' },
+    });
+
+    assert.match(readResult.content, /\"name\": \"ferretbot\"/);
+  } finally {
+    await lifecycle.shutdown('test');
+    await fs.rm(stateDir, { recursive: true, force: true });
+  }
 });
 
 test('lifecycle passes discovered provider context window into agent loop config', async () => {
