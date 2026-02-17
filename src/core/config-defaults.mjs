@@ -1,7 +1,6 @@
-import os from 'node:os';
 import path from 'node:path';
 
-export const DEFAULT_AGENT_DIR = path.join(os.homedir(), '.ferretbot');
+export const DEFAULT_AGENT_DIR = path.resolve(process.cwd(), '.ferretbot');
 export const DEFAULT_AGENT_CONFIG_PATH = path.join(DEFAULT_AGENT_DIR, 'config.json');
 export const DEFAULT_AGENT_SOCKET_PATH = path.join(DEFAULT_AGENT_DIR, 'agent.sock');
 

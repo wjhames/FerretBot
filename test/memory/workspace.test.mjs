@@ -57,7 +57,7 @@ test('cleans entries older than threshold', async () => {
   assert.ok(!exists);
 });
 
-test('defaults workspace baseDir to current working directory', async () => {
+test('defaults workspace baseDir to .ferretbot in current working directory', async () => {
   const manager = new WorkspaceManager();
-  assert.equal(manager.baseDir, path.resolve(process.cwd()));
+  assert.equal(manager.baseDir, path.resolve(process.cwd(), '.ferretbot'));
 });

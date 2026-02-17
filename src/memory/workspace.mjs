@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const DEFAULT_WORKSPACE_DIR = path.resolve(process.cwd());
+const DEFAULT_WORKSPACE_DIR = path.resolve(process.cwd(), '.ferretbot');
 const DEFAULT_CLEANUP_THRESHOLD = 7 * 24 * 60 * 60 * 1000;
 
 async function ensureDir(directory) {

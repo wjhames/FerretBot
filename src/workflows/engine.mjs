@@ -1,9 +1,9 @@
 import { promises as fs } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { evaluateChecks } from './checks.mjs';
+import { DEFAULT_AGENT_DIR } from '../core/config-defaults.mjs';
 
-const DEFAULT_RUNS_DIR = path.join(os.homedir(), '.ferretbot', 'workflow-runs');
+const DEFAULT_RUNS_DIR = path.join(DEFAULT_AGENT_DIR, 'workflow-runs');
 
 const RUN_STATE = {
   queued: 'queued',

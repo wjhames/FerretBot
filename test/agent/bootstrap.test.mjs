@@ -16,7 +16,7 @@ async function withTempWorkspace(run) {
   }
 }
 
-test('workspace bootstrap manager seeds prompt files and memory files', async () => {
+test('bootstrap manager does not scaffold prompt files', async () => {
   await withTempWorkspace(async (baseDir) => {
     const workspaceManager = createWorkspaceManager({ baseDir });
     const bootstrap = createWorkspaceBootstrapManager({
@@ -26,30 +26,26 @@ test('workspace bootstrap manager seeds prompt files and memory files', async ()
 
     await bootstrap.ensureInitialized();
 
-    const required = [
+    const expectedMissing = [
       'AGENTS.md',
-      'AGENTS.template.md',
       'BOOT.md',
-      'BOOTSTRAP.md',
       'IDENTITY.md',
       'SOUL.md',
       'USER.md',
       'MEMORY.md',
       'MEMORY.system.md',
-      '.workspace-templates.json',
-      '.bootstrap-state.json',
       'memory/2026-02-15.md',
       'memory/2026-02-14.md',
     ];
 
-    for (const relativePath of required) {
+    for (const relativePath of expectedMissing) {
       const exists = await workspaceManager.exists(relativePath);
-      assert.equal(exists, true, `expected ${relativePath} to exist`);
+      assert.equal(exists, false, `expected ${relativePath} to be absent`);
     }
   });
 });
 
-test('bootstrap state transitions to completed only when marker exists and BOOTSTRAP is removed', async () => {
+test('loadPromptContext reads existing local files only', async () => {
   await withTempWorkspace(async (baseDir) => {
     const workspaceManager = createWorkspaceManager({ baseDir });
     const bootstrap = createWorkspaceBootstrapManager({
@@ -57,33 +53,28 @@ test('bootstrap state transitions to completed only when marker exists and BOOTS
       now: () => new Date('2026-02-15T12:00:00.000Z'),
     });
 
-    await bootstrap.ensureInitialized();
-
-    const active = await bootstrap.getBootstrapState();
-    assert.equal(active.state, 'active');
-    await workspaceManager.writeTextFile('.bootstrap-complete', '{"status":"complete"}');
-    const failed = await bootstrap.getBootstrapState();
-    assert.equal(failed.state, 'failed');
-
-    await workspaceManager.removePath('BOOTSTRAP.md');
-    const completed = await bootstrap.getBootstrapState();
-    assert.equal(completed.state, 'completed');
-  });
-});
-
-test('loadPromptContext does not inject bootstrap orchestration text', async () => {
-  await withTempWorkspace(async (baseDir) => {
-    const workspaceManager = createWorkspaceManager({ baseDir });
-    const bootstrap = createWorkspaceBootstrapManager({
-      workspaceManager,
-      now: () => new Date('2026-02-15T12:00:00.000Z'),
-    });
-
-    await bootstrap.ensureInitialized();
+    await workspaceManager.writeTextFile('AGENTS.md', '# Agents');
+    await workspaceManager.writeTextFile('BOOT.md', '# Boot');
+    await workspaceManager.writeTextFile('IDENTITY.md', '# Identity');
+    await workspaceManager.writeTextFile('SOUL.md', '# Soul');
+    await workspaceManager.writeTextFile('USER.md', '# User');
+    await workspaceManager.writeTextFile('MEMORY.md', '# Memory');
+    await workspaceManager.writeTextFile('MEMORY.system.md', '# System Memory');
+    await workspaceManager.writeTextFile('memory/2026-02-15.md', '# 2026-02-15\n\n- today');
+    await workspaceManager.writeTextFile('memory/2026-02-14.md', '# 2026-02-14\n\n- yesterday');
 
     const context = await bootstrap.loadPromptContext();
+
+    assert.match(context.layers.boot, /AGENTS\.md/);
+    assert.match(context.layers.boot, /BOOT\.md/);
+    assert.match(context.layers.identity, /# Identity/);
+    assert.match(context.layers.soul, /# Soul/);
+    assert.match(context.layers.user, /# User/);
+    assert.match(context.layers.memory, /# Memory/);
+    assert.match(context.layers.systemMemory, /# System Memory/);
+    assert.match(context.layers.dailyMemory, /Yesterday memory/);
+    assert.match(context.layers.dailyMemory, /Today memory/);
     assert.equal(context.layers.bootstrap, '');
     assert.equal(context.extraRules, '');
-    assert.match(context.layers.soul, /Heart of Who You Are/);
   });
 });
