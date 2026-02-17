@@ -16,7 +16,7 @@ async function withTempWorkspace(run) {
   }
 }
 
-test('workspace bootstrap manager seeds prompt files and bootstrap workflow', async () => {
+test('workspace bootstrap manager seeds prompt files and memory files', async () => {
   await withTempWorkspace(async (baseDir) => {
     const workspaceManager = createWorkspaceManager({ baseDir });
     const bootstrap = createWorkspaceBootstrapManager({
@@ -38,7 +38,6 @@ test('workspace bootstrap manager seeds prompt files and bootstrap workflow', as
       'MEMORY.system.md',
       '.workspace-templates.json',
       '.bootstrap-state.json',
-      'workflows/bootstrap-init/workflow.yaml',
       'memory/2026-02-15.md',
       'memory/2026-02-14.md',
     ];
@@ -47,23 +46,6 @@ test('workspace bootstrap manager seeds prompt files and bootstrap workflow', as
       const exists = await workspaceManager.exists(relativePath);
       assert.equal(exists, true, `expected ${relativePath} to exist`);
     }
-
-    const bootstrapWorkflow = await workspaceManager.readTextFile('workflows/bootstrap-init/workflow.yaml');
-    assert.match(bootstrapWorkflow, /type: wait_for_input/);
-    assert.match(bootstrapWorkflow, /responseKey: user_name/);
-    assert.match(bootstrapWorkflow, /responseKey: assistant_nature/);
-    assert.match(bootstrapWorkflow, /responseKey: assistant_vibe/);
-    assert.match(bootstrapWorkflow, /responseKey: assistant_emoji/);
-    assert.match(bootstrapWorkflow, /responseKey: user_address/);
-    assert.match(bootstrapWorkflow, /responseKey: user_timezone/);
-    assert.match(bootstrapWorkflow, /responseKey: soul_matters/);
-    assert.match(bootstrapWorkflow, /responseKey: soul_behavior/);
-    assert.match(bootstrapWorkflow, /responseKey: soul_boundaries/);
-    assert.match(bootstrapWorkflow, /Hey, I just came online/);
-
-    const descriptor = bootstrap.getBootstrapWorkflowDescriptor();
-    assert.equal(descriptor.id, 'bootstrap-init');
-    assert.equal(descriptor.version, '1.0.0');
   });
 });
 
@@ -79,8 +61,6 @@ test('bootstrap state transitions to completed only when marker exists and BOOTS
 
     const active = await bootstrap.getBootstrapState();
     assert.equal(active.state, 'active');
-    assert.equal(await bootstrap.shouldRunBootstrapWorkflow(), true);
-
     await workspaceManager.writeTextFile('.bootstrap-complete', '{"status":"complete"}');
     const failed = await bootstrap.getBootstrapState();
     assert.equal(failed.state, 'failed');
@@ -88,7 +68,6 @@ test('bootstrap state transitions to completed only when marker exists and BOOTS
     await workspaceManager.removePath('BOOTSTRAP.md');
     const completed = await bootstrap.getBootstrapState();
     assert.equal(completed.state, 'completed');
-    assert.equal(await bootstrap.shouldRunBootstrapWorkflow(), false);
   });
 });
 

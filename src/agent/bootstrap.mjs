@@ -13,16 +13,10 @@ const DEFAULT_PROMPT_FILES = Object.freeze({
   memory: 'MEMORY.md',
   systemMemory: 'MEMORY.system.md',
   memoryDir: 'memory',
-  workflowsDir: 'workflows',
-  bootstrapWorkflowDir: 'workflows/bootstrap-init',
-  bootstrapWorkflowFile: 'workflows/bootstrap-init/workflow.yaml',
   bootstrapMarker: '.bootstrap-complete',
   bootstrapState: '.bootstrap-state.json',
   templateMeta: '.workspace-templates.json',
 });
-
-const BOOTSTRAP_WORKFLOW_ID = 'bootstrap-init';
-const BOOTSTRAP_WORKFLOW_VERSION = '1.0.0';
 
 const BOOTSTRAP_STATES = Object.freeze({
   PENDING: 'pending',
@@ -65,14 +59,9 @@ Define the software outcomes you want.
 
 const TEMPLATE_BOOTSTRAP = `This file indicates first-run bootstrap is pending.
 
-Bootstrap is now executed by the workspace workflow \
-\`${DEFAULT_PROMPT_FILES.bootstrapWorkflowFile}\`.
-
-The workflow should gather or initialize operator context and then:
-1. Write \
-\`${DEFAULT_PROMPT_FILES.bootstrapMarker}\` with JSON: {"status":"complete"}
+Bootstrap completion:
+1. Write \`${DEFAULT_PROMPT_FILES.bootstrapMarker}\` with JSON: {"status":"complete"}
 2. Delete this file (\`${DEFAULT_PROMPT_FILES.bootstrap}\`)
-3. Optionally delete bootstrap workflow files
 `;
 
 const TEMPLATE_AGENTS = `# AGENTS.md Template
@@ -209,179 +198,6 @@ const TEMPLATE_SYSTEM_MEMORY = `# MEMORY.system.md
 System-maintained memory summary.
 `;
 
-const TEMPLATE_BOOTSTRAP_WORKFLOW = `id: ${BOOTSTRAP_WORKFLOW_ID}
-version: "${BOOTSTRAP_WORKFLOW_VERSION}"
-name: Workspace Bootstrap
-steps:
-  - id: ask-user-name
-    type: wait_for_input
-    prompt: "Hey, I just came online. Who am I? Who are you? First, what should I call you?"
-    responseKey: user_name
-  - id: ask-assistant-name
-    type: wait_for_input
-    prompt: "What should I call myself?"
-    responseKey: assistant_name
-    dependsOn: [ask-user-name]
-  - id: ask-nature
-    type: wait_for_input
-    prompt: "What kind of creature should I be? AI assistant is fine, or something weirder."
-    responseKey: assistant_nature
-    dependsOn: [ask-assistant-name]
-  - id: ask-vibe
-    type: wait_for_input
-    prompt: "What vibe should I have? Formal, casual, snarky, warm, or something else."
-    responseKey: assistant_vibe
-    dependsOn: [ask-nature]
-  - id: ask-emoji
-    type: wait_for_input
-    prompt: "Pick a signature emoji for me."
-    responseKey: assistant_emoji
-    dependsOn: [ask-vibe]
-  - id: ask-user-address
-    type: wait_for_input
-    prompt: "How should I address you in conversation?"
-    responseKey: user_address
-    dependsOn: [ask-emoji]
-  - id: ask-user-timezone
-    type: wait_for_input
-    prompt: "What timezone are you in?"
-    responseKey: user_timezone
-    dependsOn: [ask-user-address]
-  - id: ask-user-notes
-    type: wait_for_input
-    prompt: "Any notes about how you want me to help day-to-day?"
-    responseKey: user_notes
-    dependsOn: [ask-user-timezone]
-  - id: ask-soul-matters
-    type: wait_for_input
-    prompt: "Before we fill SOUL.md: what matters most to you when we work together?"
-    responseKey: soul_matters
-    dependsOn: [ask-user-notes]
-  - id: ask-soul-behavior
-    type: wait_for_input
-    prompt: "How do you want me to behave? If you're stuck, I can suggest: concise, candid, warm, or strict."
-    responseKey: soul_behavior
-    dependsOn: [ask-soul-matters]
-  - id: ask-soul-boundaries
-    type: wait_for_input
-    prompt: "Any boundaries or preferences I should always respect?"
-    responseKey: soul_boundaries
-    dependsOn: [ask-soul-behavior]
-  - id: write-user
-    type: system_write_file
-    path: USER.md
-    content: |
-      # USER.md
-
-      ## Identity
-      - Name: {{args.user_name}}
-      - Preferred address: {{args.user_address}}
-      - Timezone: {{args.user_timezone}}
-      - Role:
-      - Context:
-
-      ## Preferences
-      - Communication style:
-      - Technical depth:
-      - Tooling habits:
-
-      ## Goals
-      - Near-term:
-      - Long-term:
-
-      ## Constraints
-      - Time:
-      - Security/compliance:
-      - Infrastructure:
-
-      ## Working agreements
-      - Do:
-      - Avoid:
-
-      ## Unknowns
-      - Notes: {{args.user_notes}}
-      - Connect preference: just-here
-    dependsOn: [ask-soul-boundaries]
-  - id: write-identity
-    type: system_write_file
-    path: IDENTITY.md
-    content: |
-      # IDENTITY.md
-
-      ## Name
-      {{args.assistant_name}}
-
-      ## Nature
-      {{args.assistant_nature}}
-
-      ## Vibe
-      {{args.assistant_vibe}}
-
-      ## Emoji
-      {{args.assistant_emoji}}
-
-      ## Purpose
-      Local-first coding partner for this workspace.
-
-      ## Skills
-      Implementation, debugging, refactoring, and workflow execution.
-
-      ## Operating style
-      Pragmatic, concise, and deterministic.
-
-      ## Boundaries
-      No fabricated tool results. No unsafe destructive actions.
-    dependsOn: [ask-soul-boundaries]
-  - id: write-soul
-    type: system_write_file
-    path: SOUL.md
-    content: |
-      # SOUL.md
-
-      The Heart of Who You Are
-
-      ## Core Values
-      - {{args.soul_matters}}
-      - Truth over convenience
-      - Momentum with quality
-
-      ## Decision Style
-      - {{args.soul_behavior}}
-      - Prefer small, testable changes
-
-      ## Collaboration
-      - Keep commitments and close loops
-      - Report progress frequently
-
-      ## Boundaries
-      - {{args.soul_boundaries}}
-    dependsOn: [ask-soul-boundaries]
-  - id: mark-complete
-    type: system_write_file
-    path: ${DEFAULT_PROMPT_FILES.bootstrapMarker}
-    content: |
-      {"status":"complete"}
-    dependsOn: [write-user, write-identity, write-soul]
-  - id: delete-bootstrap-md
-    type: system_delete_file
-    path: ${DEFAULT_PROMPT_FILES.bootstrap}
-    dependsOn: [mark-complete]
-  - id: write-bootstrap-state
-    type: system_write_file
-    path: ${DEFAULT_PROMPT_FILES.bootstrapState}
-    content: |
-      {
-        "state": "completed",
-        "reason": "Bootstrap workflow completed.",
-        "updatedAt": "workflow-managed"
-      }
-    dependsOn: [delete-bootstrap-md]
-  - id: delete-bootstrap-workflow
-    type: system_delete_file
-    path: ${DEFAULT_PROMPT_FILES.bootstrapWorkflowDir}
-    dependsOn: [write-bootstrap-state]
-`;
-
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -504,25 +320,6 @@ export class WorkspaceBootstrapManager {
     await this.#workspaceManager.writeTextFile(this.#fileNames.templateMeta, JSON.stringify(payload, null, 2));
   }
 
-  async #ensureBootstrapWorkflowSeeded() {
-    const state = await this.getBootstrapState();
-    const workflowExists = await this.#workspaceManager.exists(this.#fileNames.bootstrapWorkflowFile);
-
-    if (state.state === BOOTSTRAP_STATES.COMPLETED) {
-      return;
-    }
-
-    if (!workflowExists) {
-      await this.#workspaceManager.ensureTextFile(this.#fileNames.bootstrapWorkflowFile, TEMPLATE_BOOTSTRAP_WORKFLOW);
-      return;
-    }
-
-    const current = await this.#workspaceManager.readTextFile(this.#fileNames.bootstrapWorkflowFile);
-    if (normalizeText(current) !== normalizeText(TEMPLATE_BOOTSTRAP_WORKFLOW)) {
-      await this.#workspaceManager.writeTextFile(this.#fileNames.bootstrapWorkflowFile, TEMPLATE_BOOTSTRAP_WORKFLOW);
-    }
-  }
-
   async #ensureTemplates() {
     const templates = this.#buildTemplates();
     const priorMeta = await this.#readTemplateMeta();
@@ -576,12 +373,6 @@ export class WorkspaceBootstrapManager {
     return this.#writeBootstrapState(BOOTSTRAP_STATES.PENDING, 'Bootstrap pending marker.');
   }
 
-  async shouldRunBootstrapWorkflow() {
-    await this.ensureInitialized();
-    const state = await this.getBootstrapState();
-    return state.state === BOOTSTRAP_STATES.ACTIVE;
-  }
-
   async ensureInitialized() {
     if (this.#initialized) {
       return;
@@ -603,12 +394,6 @@ export class WorkspaceBootstrapManager {
       buildDailyMemoryTemplate(yesterdayStamp),
     );
 
-    await this.#workspaceManager.ensureTextFile(
-      `${this.#fileNames.workflowsDir}/.keep`,
-      '',
-    );
-
-    await this.#ensureBootstrapWorkflowSeeded();
     await this.getBootstrapState();
     this.#initialized = true;
   }
@@ -666,12 +451,6 @@ export class WorkspaceBootstrapManager {
     };
   }
 
-  getBootstrapWorkflowDescriptor() {
-    return {
-      id: BOOTSTRAP_WORKFLOW_ID,
-      version: BOOTSTRAP_WORKFLOW_VERSION,
-    };
-  }
 }
 
 export function createWorkspaceBootstrapManager(options) {
@@ -680,4 +459,3 @@ export function createWorkspaceBootstrapManager(options) {
 
 export const WORKSPACE_TEMPLATE_VERSION = TEMPLATE_VERSION;
 export const WORKSPACE_DEFAULT_PROMPT_FILES = DEFAULT_PROMPT_FILES;
-export const WORKSPACE_BOOTSTRAP_WORKFLOW_ID = BOOTSTRAP_WORKFLOW_ID;
