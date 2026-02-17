@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runAgentTurn } from '../../src/agent/loop-runner.mjs';
+import { runAgentTurn } from '../../src/agent/turn/runner.mjs';
 
 test('runAgentTurn drives parse-retry then final emit', async () => {
   const emitted = [];

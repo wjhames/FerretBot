@@ -1,4 +1,4 @@
-import { buildCorrectionPrompt } from './loop-policy.mjs';
+import { buildCorrectionPrompt } from './policy.mjs';
 
 export async function executeToolCall(options = {}) {
   const {

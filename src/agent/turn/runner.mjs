@@ -5,7 +5,7 @@ import {
   shouldContinueCompletion,
   toToolCallFromNative,
   toToolCallFromParsed,
-} from './loop-policy.mjs';
+} from './policy.mjs';
 
 export async function runAgentTurn(options = {}) {
   const {

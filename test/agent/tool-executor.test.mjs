@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { executeToolCall } from '../../src/agent/tool-executor.mjs';
+import { executeToolCall } from '../../src/agent/turn/tool-executor.mjs';
 
 test('executeToolCall emits validation retry when tool args invalid', async () => {
   const messages = [];

@@ -1,4 +1,4 @@
-import { toText } from './token-utils.mjs';
+import { toText } from './tokenizer.mjs';
 
 const CONTINUATION_KEEP_IF_POSSIBLE_TAIL = 8;
 const CONTINUATION_SUMMARY_LIMIT = 6;

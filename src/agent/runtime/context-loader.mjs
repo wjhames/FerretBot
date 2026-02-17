@@ -1,4 +1,4 @@
-import { WORKFLOW_STEP_START_EVENT, STEP_START_EVENTS } from './agent-events.mjs';
+import { WORKFLOW_STEP_START_EVENT, STEP_START_EVENTS } from '../events.mjs';
 
 function toCharBudget(tokenBudget) {
   if (!Number.isFinite(tokenBudget) || tokenBudget <= 0) {

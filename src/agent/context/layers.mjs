@@ -1,5 +1,5 @@
-import { buildSystemPrompt } from './prompt.mjs';
-import { toText } from './token-utils.mjs';
+import { buildSystemPrompt } from '../prompt.mjs';
+import { toText } from './tokenizer.mjs';
 
 export function compressPriorSteps(steps = []) {
   if (!Array.isArray(steps) || steps.length === 0) {
