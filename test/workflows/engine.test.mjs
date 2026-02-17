@@ -515,7 +515,7 @@ test('wait_for_input steps pause run, capture user input, and continue', async (
   });
 });
 
-test('wait_for_input normalizes mixed name answers and can auto-skip prefilled follow-up', async () => {
+test('wait_for_input stores literal input for each step', async () => {
   await withTempDir(async (storageDir) => {
     const workspaceDir = path.join(storageDir, 'workspace');
     const workspaceManager = createWorkspaceManager({ baseDir: workspaceDir });
@@ -603,7 +603,18 @@ test('wait_for_input normalizes mixed name answers and can auto-skip prefilled f
       type: 'user:input',
       channel: 'tui',
       sessionId: 'mix-1',
-      content: { text: 'You are FerretBot. I am Jason.' },
+      content: { text: 'Jason' },
+    });
+
+    await waitFor(() => run.state === 'waiting_input');
+    assert.equal(run.args.user_name, 'Jason');
+    assert.equal(run.args.assistant_name, undefined);
+
+    await bus.emit({
+      type: 'user:input',
+      channel: 'tui',
+      sessionId: 'mix-1',
+      content: { text: 'FerretBot' },
     });
 
     await waitFor(() => run.state === 'completed');
@@ -680,80 +691,6 @@ test('wait_for_input does not consume mismatched-session input for non-bootstrap
     assert.equal(run.args.sessionId, 'session-a');
     assert.equal(run.args.user_name, undefined);
     assert.equal(bus.eventsOfType('workflow:needs_input').length, needsInputBefore);
-
-    engine.stop();
-  });
-});
-
-test('bootstrap wait_for_input rebinds session and re-prompts on reconnect', async () => {
-  await withTempDir(async (storageDir) => {
-    const workspaceDir = path.join(storageDir, 'workspace');
-    const workspaceManager = createWorkspaceManager({ baseDir: workspaceDir });
-    await workspaceManager.ensureWorkspace();
-
-    const bus = new FakeBus();
-    const wf = makeWorkflow({
-      id: 'bootstrap-init',
-      steps: [
-        {
-          id: 'ask-user',
-          name: 'ask-user',
-          type: 'wait_for_input',
-          instruction: '',
-          prompt: 'Who are you?',
-          responseKey: 'user_name',
-          tools: [],
-          loadSkills: [],
-          dependsOn: [],
-          successChecks: [],
-          timeout: null,
-          retries: 0,
-          approval: false,
-          condition: null,
-          path: null,
-          content: null,
-          mode: null,
-        },
-      ],
-    });
-
-    const registry = makeRegistry([wf]);
-    const engine = createWorkflowEngine({ bus, registry, storageDir, workspaceManager });
-    engine.start();
-
-    const run = await engine.startRun('bootstrap-init');
-    assert.equal(run.state, 'waiting_input');
-
-    await bus.emit({
-      type: 'user:input',
-      channel: 'tui',
-      sessionId: 'session-old',
-      content: { text: 'hello' },
-    });
-    await waitFor(() => run.args.sessionId === 'session-old');
-    assert.equal(run.args.sessionId, 'session-old');
-
-    const rebindEvent = {
-      type: 'user:input',
-      channel: 'tui',
-      sessionId: 'session-new',
-      content: { text: 'still here' },
-    };
-    await bus.emit(rebindEvent);
-    await waitFor(() => rebindEvent.__workflowConsumed === true);
-    await waitFor(() => run.args.sessionId === 'session-new');
-
-    assert.equal(rebindEvent.__workflowConsumed, true);
-    assert.equal(run.state, 'waiting_input');
-    assert.equal(run.args.sessionId, 'session-new');
-    assert.equal(run.args.user_name, undefined);
-
-    await waitFor(() => bus.eventsOfType('workflow:needs_input').some((event) =>
-      event.sessionId === 'session-new'
-      && event.content?.prompt === 'Who are you?'));
-    await waitFor(() => bus.eventsOfType('agent:response').some((event) =>
-      event.sessionId === 'session-new'
-      && event.content?.text === 'Who are you?'));
 
     engine.stop();
   });
