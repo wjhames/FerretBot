@@ -274,25 +274,6 @@ export class AgentLifecycle {
       await scheduler.start();
     }
 
-    if (
-      workspaceBootstrap
-      && typeof workspaceBootstrap.shouldRunBootstrapWorkflow === 'function'
-      && typeof workspaceBootstrap.getBootstrapWorkflowDescriptor === 'function'
-    ) {
-      const shouldRunBootstrap = await workspaceBootstrap.shouldRunBootstrapWorkflow();
-      if (shouldRunBootstrap) {
-        const workflowDescriptor = workspaceBootstrap.getBootstrapWorkflowDescriptor();
-        const existingRun = workflowEngine.listRuns().find((run) =>
-          run.workflowId === workflowDescriptor.id
-          && (run.state === 'queued' || run.state === 'running' || run.state === 'waiting_approval' || run.state === 'waiting_input'),
-        );
-
-        if (!existingRun && workflowRegistry.get(workflowDescriptor.id, workflowDescriptor.version)) {
-          await workflowEngine.startRun(workflowDescriptor.id, {}, { version: workflowDescriptor.version });
-        }
-      }
-    }
-
     this.#runtime = {
       config,
       bus,
