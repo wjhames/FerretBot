@@ -52,6 +52,14 @@ In another terminal:
 npm run cli -- message "Hello"
 ```
 
+Workflow commands:
+
+```bash
+npm run cli -- workflow run <workflow-id> [--version <semver>] [--arg key=value]
+npm run cli -- workflow cancel <run-id>
+npm run cli -- workflow list
+```
+
 ## Default Paths
 
 - Config: `~/.ferretbot/config.json`
@@ -66,6 +74,33 @@ npm run cli -- message "Hello"
 - Override workflow root with `workflows.rootDir` in `~/.ferretbot/config.json`.
 - Engine supports `agent` and system file steps.
 - `loadSkills` resolution order: step, then workflow, then global.
+- `.ferretbot/` is gitignored in this repo, so workflow YAML files are local-only by default.
+- To share workflow definitions in git, set `workflows.rootDir` to a tracked path (for example `./workflows`).
+
+## Current Status
+
+- CLI is the only shipped client (TUI removed).
+- Message command prints assistant text only.
+- Workflow runs/steps persist under `.ferretbot/workflow-runs`.
+- Current workflow model is non-interactive: no approval/input pause steps.
+
+## Troubleshooting
+
+- `Connection error` in CLI:
+  Agent daemon is not running, or socket/port differs from CLI flags/config.
+- Timeout/slow responses:
+  Local model generation is slow for requested output. Reduce response size or increase provider timeout.
+- Empty/very short answers:
+  The loop emits a fallback message for empty model output. If frequent, inspect LM Studio model state and prompt/tool context.
+
+## Runtime Notes
+
+- Parse retries:
+  On malformed tool JSON, the loop sends a correction prompt and retries up to 2 times before returning `parse_failed`.
+- Parse error hints:
+  Parser errors include a compact candidate snippet for debugging without excessive context growth.
+- Context budgeting:
+  Layer budget aliases (`systemPrompt`, `taskScope`, `skillContent`, `priorContext`) are normalized to runtime layer names.
 
 ## Commands
 
