@@ -35,7 +35,6 @@ function printUsage(stream) {
       '  ferretbot-cli message <text>',
       '  ferretbot-cli -m <text>',
       '  ferretbot-cli workflow run <workflow-id> [--version <semver>] [--arg key=value]...',
-      '  ferretbot-cli workflow resume <run-id>',
       '  ferretbot-cli workflow cancel <run-id>',
       '  ferretbot-cli workflow list',
       '',
@@ -154,15 +153,15 @@ export function parseCliArgs(argv = []) {
     };
   }
 
-  if (sub === 'resume' || sub === 'cancel') {
+  if (sub === 'cancel') {
     const runId = Number.parseInt(String(args[2] ?? ''), 10);
     if (!Number.isInteger(runId) || runId <= 0) {
-      return { ok: false, error: `${sub} requires a positive run-id.` };
+      return { ok: false, error: 'cancel requires a positive run-id.' };
     }
     return {
       ok: true,
       global,
-      command: { kind: `workflow:${sub}`, runId },
+      command: { kind: 'workflow:cancel', runId },
     };
   }
 
@@ -245,13 +244,6 @@ export function buildCommandPayload(command, requestId) {
       payload.content.version = command.version;
     }
     return payload;
-  }
-
-  if (command.kind === 'workflow:resume') {
-    return {
-      type: 'workflow:run:resume',
-      content: { requestId, runId: command.runId },
-    };
   }
 
   if (command.kind === 'workflow:cancel') {

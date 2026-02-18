@@ -44,8 +44,6 @@ test('EventBus accepts workflow event types', async () => {
     'workflow:run:queued',
     'workflow:step:start',
     'workflow:step:complete',
-    'workflow:needs_approval',
-    'workflow:needs_input',
     'workflow:run:complete',
   ];
 

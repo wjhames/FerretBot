@@ -108,34 +108,6 @@ export function registerWorkflowIpcCommands({ bus, workflowEngine, workflowRegis
     });
   }));
 
-  unsubscribes.push(bus.on('workflow:run:resume', (event) => {
-    runDetached(async () => {
-      try {
-        const runId = toRunId(event?.content?.runId);
-        if (!runId) {
-          throw new Error('runId must be a positive integer.');
-        }
-
-        const run = await workflowEngine.resumeRun(runId);
-        await emitCommandResult(bus, event, {
-          ok: true,
-          message: `workflow run ${run.id} resumed.`,
-          data: {
-            runId: run.id,
-            workflowId: run.workflowId,
-            workflowVersion: run.workflowVersion,
-            state: run.state,
-          },
-        });
-      } catch (error) {
-        await emitCommandResult(bus, event, {
-          ok: false,
-          message: error?.message ?? String(error),
-        });
-      }
-    });
-  }));
-
   unsubscribes.push(bus.on('workflow:run:cancel', (event) => {
     runDetached(async () => {
       try {

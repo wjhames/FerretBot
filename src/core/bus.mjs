@@ -6,11 +6,8 @@ const DEFAULT_ALLOWED_EVENT_TYPES = [
   'workflow:run:queued',
   'workflow:step:start',
   'workflow:step:complete',
-  'workflow:needs_approval',
-  'workflow:needs_input',
   'workflow:run:complete',
   'workflow:run:start',
-  'workflow:run:resume',
   'workflow:run:cancel',
   'workflow:run:list',
 ];
