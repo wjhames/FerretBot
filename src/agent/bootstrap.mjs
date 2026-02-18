@@ -6,9 +6,24 @@ const TEMPLATE_VERSION = 'ferretbot-2026-02-17-v1';
 const DEFAULT_PROMPT_FILES = Object.freeze({
   agents: 'AGENTS.md',
 });
-const DAILY_MEMORY_PLACEHOLDER = 'YYYY-MM-DD';
 const MAX_INCLUDE_CHARS = 12_000;
 const MAX_BOOTSTRAP_CHARS = 28_000;
+const DEFAULT_MEMORY_TEMPLATE = [
+  '# MEMORY.md',
+  '',
+  '## Facts',
+  '-',
+  '',
+  '## Preferences',
+  '-',
+  '',
+  '## Open Threads',
+  '-',
+  '',
+  '## Recent Decisions',
+  '-',
+  '',
+].join('\n');
 
 function normalizeFileNames(input = {}) {
   const merged = { ...DEFAULT_PROMPT_FILES, ...input };
@@ -20,7 +35,7 @@ export class WorkspaceBootstrapManager {
   #fileNames;
   #workDir;
   #agentStateDir;
-  #clock;
+  #workspaceManager;
   #cache;
 
   constructor(options = {}) {
@@ -29,6 +44,7 @@ export class WorkspaceBootstrapManager {
       throw new TypeError('WorkspaceBootstrapManager requires workspaceManager.');
     }
 
+    this.#workspaceManager = workspaceManager;
     this.#initialized = false;
     this.#fileNames = normalizeFileNames(options.fileNames);
     this.#workDir = typeof options.workDir === 'string' && options.workDir.trim().length > 0
@@ -37,11 +53,13 @@ export class WorkspaceBootstrapManager {
     this.#agentStateDir = typeof options.agentStateDir === 'string' && options.agentStateDir.trim().length > 0
       ? options.agentStateDir
       : workspaceManager.baseDir;
-    this.#clock = typeof options.now === 'function' ? options.now : () => new Date();
     this.#cache = null;
   }
 
   async ensureInitialized() {
+    if (this.#workspaceManager && typeof this.#workspaceManager.ensureTextFile === 'function') {
+      await this.#workspaceManager.ensureTextFile('MEMORY.md', DEFAULT_MEMORY_TEMPLATE);
+    }
     this.#initialized = true;
   }
 
@@ -50,16 +68,14 @@ export class WorkspaceBootstrapManager {
       await this.ensureInitialized();
     }
 
-    const dayKey = this.#toDayKey(this.#clock());
-    const cacheHit = await this.#isCacheFresh(dayKey);
+    const cacheHit = await this.#isCacheFresh();
     if (!cacheHit) {
-      this.#cache = await this.#rebuildCache(dayKey);
+      this.#cache = await this.#rebuildCache();
     }
 
     return {
       bootstrapState: {
         cacheHit,
-        dayKey,
         dependencyCount: Array.isArray(this.#cache?.dependencies) ? this.#cache.dependencies.length : 0,
       },
       extraRules: [
@@ -77,27 +93,8 @@ export class WorkspaceBootstrapManager {
     };
   }
 
-  #toDayKey(dateValue) {
-    const date = dateValue instanceof Date && !Number.isNaN(dateValue.valueOf())
-      ? dateValue
-      : new Date();
-    const year = String(date.getFullYear());
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  #dayOffset(dayKey, offsetDays) {
-    const base = new Date(`${dayKey}T12:00:00.000Z`);
-    base.setUTCDate(base.getUTCDate() + offsetDays);
-    return this.#toDayKey(base);
-  }
-
-  async #isCacheFresh(currentDayKey) {
+  async #isCacheFresh() {
     if (!this.#cache || !Array.isArray(this.#cache.dependencies)) {
-      return false;
-    }
-    if (this.#cache.dayKey !== currentDayKey) {
       return false;
     }
 
@@ -111,7 +108,7 @@ export class WorkspaceBootstrapManager {
     return true;
   }
 
-  async #rebuildCache(dayKey) {
+  async #rebuildCache() {
     const dependencies = [];
     const includedDocs = [];
     const includeSeen = new Set();
@@ -139,7 +136,7 @@ export class WorkspaceBootstrapManager {
     }
 
     for (const source of sources) {
-      const includePaths = this.#extractIncludePaths(source.content, source.path, dayKey);
+      const includePaths = this.#extractIncludePaths(source.content, source.path);
       for (const includePath of includePaths) {
         const includeKey = includePath.toLowerCase();
         if (includeSeen.has(includeKey)) {
@@ -162,7 +159,6 @@ export class WorkspaceBootstrapManager {
     const bootstrapText = this.#composeBootstrapText(sources, includedDocs);
 
     return {
-      dayKey,
       dependencies,
       bootstrapText: bootstrapText.length > MAX_BOOTSTRAP_CHARS
         ? `${bootstrapText.slice(0, MAX_BOOTSTRAP_CHARS)}...`
@@ -184,7 +180,7 @@ export class WorkspaceBootstrapManager {
     return parts.join('\n\n').trim();
   }
 
-  #extractIncludePaths(sourceText, sourcePath, dayKey) {
+  #extractIncludePaths(sourceText, sourcePath) {
     if (typeof sourceText !== 'string' || sourceText.length === 0) {
       return [];
     }
@@ -211,31 +207,18 @@ export class WorkspaceBootstrapManager {
     const resolved = [];
     const sourceDir = path.dirname(sourcePath);
     for (const candidate of includeCandidates) {
-      for (const expanded of this.#expandDailyPattern(candidate, dayKey)) {
-        const normalized = expanded.replace(/^\.?\//, '');
-        if (normalized.toLowerCase() === this.#fileNames.agents.toLowerCase()) {
-          continue;
-        }
-        const includePath = this.#resolveIncludePath(expanded, sourceDir);
-        if (!includePath) {
-          continue;
-        }
-        resolved.push(includePath);
+      const normalized = candidate.replace(/^\.?\//, '');
+      if (normalized.toLowerCase() === this.#fileNames.agents.toLowerCase()) {
+        continue;
       }
+      const includePath = this.#resolveIncludePath(candidate, sourceDir);
+      if (!includePath) {
+        continue;
+      }
+      resolved.push(includePath);
     }
 
     return [...new Set(resolved)];
-  }
-
-  #expandDailyPattern(candidate, dayKey) {
-    if (!candidate.includes(DAILY_MEMORY_PLACEHOLDER)) {
-      return [candidate];
-    }
-
-    return [
-      candidate.replaceAll(DAILY_MEMORY_PLACEHOLDER, dayKey),
-      candidate.replaceAll(DAILY_MEMORY_PLACEHOLDER, this.#dayOffset(dayKey, -1)),
-    ];
   }
 
   #resolveIncludePath(candidatePath, sourceDir) {

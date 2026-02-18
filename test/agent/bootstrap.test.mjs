@@ -19,7 +19,7 @@ async function withTempWorkspace(run) {
   }
 }
 
-test('bootstrap manager does not scaffold prompt files', async () => {
+test('bootstrap manager ensures MEMORY.md and does not scaffold AGENTS.md', async () => {
   await withTempWorkspace(async ({ agentStateDir, workDir }) => {
     const workspaceManager = createWorkspaceManager({ baseDir: agentStateDir });
     const bootstrap = createWorkspaceBootstrapManager({
@@ -30,14 +30,15 @@ test('bootstrap manager does not scaffold prompt files', async () => {
 
     await bootstrap.ensureInitialized();
 
-    const expectedMissing = [
-      'AGENTS.md',
-    ];
+    const agentsExists = await workspaceManager.exists('AGENTS.md');
+    assert.equal(agentsExists, false, 'expected AGENTS.md to be absent');
 
-    for (const relativePath of expectedMissing) {
-      const exists = await workspaceManager.exists(relativePath);
-      assert.equal(exists, false, `expected ${relativePath} to be absent`);
-    }
+    const memoryExists = await workspaceManager.exists('MEMORY.md');
+    assert.equal(memoryExists, true, 'expected MEMORY.md to be created');
+    const memoryText = await workspaceManager.readTextFile('MEMORY.md');
+    assert.match(memoryText, /^# MEMORY\.md/m);
+    assert.match(memoryText, /^## Facts/m);
+    assert.match(memoryText, /^## Recent Decisions/m);
   });
 });
 
@@ -128,35 +129,22 @@ test('loadPromptContext invalidates cached includes when referenced files change
   });
 });
 
-test('loadPromptContext refreshes daily memory includes when day rolls over', async () => {
+test('loadPromptContext treats YYYY-MM-DD include paths as literal and does not auto-expand dates', async () => {
   await withTempWorkspace(async ({ agentStateDir, workDir }) => {
     const workspaceManager = {
       baseDir: agentStateDir,
     };
     await fs.mkdir(path.join(agentStateDir, 'memory'), { recursive: true });
     await fs.writeFile(path.join(agentStateDir, 'AGENTS.md'), 'Read `.ferretbot/memory/YYYY-MM-DD.md`.', 'utf8');
-    await fs.writeFile(path.join(agentStateDir, 'memory', '2026-02-17.md'), 'Yesterday memory', 'utf8');
-    await fs.writeFile(path.join(agentStateDir, 'memory', '2026-02-18.md'), 'Today memory', 'utf8');
-    await fs.writeFile(path.join(agentStateDir, 'memory', '2026-02-19.md'), 'Tomorrow memory', 'utf8');
-
-    let nowValue = new Date('2026-02-18T08:00:00.000Z');
     const bootstrap = createWorkspaceBootstrapManager({
       workspaceManager,
       workDir,
       agentStateDir,
-      now: () => nowValue,
     });
 
     const first = await bootstrap.loadPromptContext();
     assert.equal(first.bootstrapState?.cacheHit, false);
-    assert.match(first.layers.bootstrap, /Today memory/);
-    assert.match(first.layers.bootstrap, /Yesterday memory/);
-    assert.doesNotMatch(first.layers.bootstrap, /Tomorrow memory/);
-
-    nowValue = new Date('2026-02-19T08:00:00.000Z');
-    const second = await bootstrap.loadPromptContext();
-    assert.equal(second.bootstrapState?.cacheHit, false);
-    assert.match(second.layers.bootstrap, /Today memory/);
-    assert.match(second.layers.bootstrap, /Tomorrow memory/);
+    assert.match(first.layers.bootstrap, /memory\/YYYY-MM-DD\.md/);
+    assert.doesNotMatch(first.layers.bootstrap, /Included file/);
   });
 });
