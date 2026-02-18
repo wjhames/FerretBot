@@ -284,6 +284,18 @@ function shouldExitFromCommandResult(command, event, requestId, clientId) {
     && (event.clientId == null || event.clientId === clientId);
 }
 
+function toDisplayText(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value && typeof value === 'object' && typeof value.text === 'string') {
+    return value.text;
+  }
+
+  return '';
+}
+
 export class IpcNdjsonClient {
   #connectImpl;
   #host;
@@ -392,10 +404,6 @@ export class IpcNdjsonClient {
   }
 }
 
-function toJsonLine(value) {
-  return `${JSON.stringify(value)}\n`;
-}
-
 export async function runCli(options = {}) {
   const {
     argv = process.argv.slice(2),
@@ -437,15 +445,24 @@ export async function runCli(options = {}) {
     port: parsed.global.port,
     socketPath: parsed.global.socketPath,
     onMessage: (event) => {
-      if (event.type !== 'system:hello') {
-        stdout.write(toJsonLine(event));
+      const clientId = client.getClientId();
+      const isTargetedEvent = clientId && (event.clientId == null || event.clientId === clientId);
+
+      if (
+        parsed.command.kind === 'message'
+        && event.type === 'agent:response'
+        && isTargetedEvent
+      ) {
+        const text = toDisplayText(event.content).trim();
+        if (text.length > 0) {
+          stdout.write(`${text}\n`);
+        }
       }
 
       if (parsed.global.watch) {
         return;
       }
 
-      const clientId = client.getClientId();
       if (!clientId) {
         return;
       }

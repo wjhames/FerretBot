@@ -83,6 +83,50 @@ test('runCli sends workflow list command and exits on workflow command result', 
   assert.equal(sent[0].type, 'workflow:run:list');
   assert.equal(sent[0].clientId, 'client-5');
   assert.equal(typeof sent[0].content.requestId, 'string');
-  assert.match(stdout.buffer, /workflow_command_result/);
+  assert.equal(stdout.buffer, '');
+  assert.equal(stderr.buffer, '');
+});
+
+test('runCli message prints only assistant response text', async () => {
+  const stdout = createCaptureStream();
+  const stderr = createCaptureStream();
+  const sent = [];
+
+  const code = await runCli({
+    argv: ['message', 'Hello'],
+    stdout,
+    stderr,
+    clientFactory: ({ onMessage, onStatus }) => ({
+      connect() {
+        queueMicrotask(() => {
+          onStatus({ type: 'hello', clientId: 'client-9' });
+        });
+      },
+      disconnect() {},
+      send(payload) {
+        sent.push(payload);
+        queueMicrotask(() => {
+          onMessage({
+            type: 'agent:status',
+            clientId: 'client-9',
+            content: { phase: 'thinking' },
+          });
+          onMessage({
+            type: 'agent:response',
+            clientId: 'client-9',
+            content: { text: 'Hi there' },
+          });
+        });
+      },
+      getClientId() {
+        return 'client-9';
+      },
+    }),
+  });
+
+  assert.equal(code, 0);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].type, 'user:input');
+  assert.equal(stdout.buffer, 'Hi there\n');
   assert.equal(stderr.buffer, '');
 });
