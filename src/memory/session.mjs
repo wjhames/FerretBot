@@ -61,18 +61,6 @@ function summarizeEntries(entries) {
   return `Earlier turns: ${lines.join(' | ')}`;
 }
 
-function toSummaryLine(entry) {
-  const role = entry.role ?? entry.type ?? 'turn';
-  const content = toSafeString(entry.content ?? entry.text).trim();
-  if (content.length === 0) {
-    return `${role}: [no text]`;
-  }
-  const snippet = content.length > SUMMARY_SNIPPET_LENGTH
-    ? `${content.slice(0, SUMMARY_SNIPPET_LENGTH)}...`
-    : content;
-  return `${role}: ${snippet}`;
-}
-
 function mergeSummaryLines(existing = [], incoming = []) {
   const merged = [...existing, ...incoming];
   const deduped = [];
@@ -247,7 +235,7 @@ export class SessionMemory {
     }
 
     const storedSummary = await this.#readStoredSummary(sessionId);
-    const incomingLines = summaryEntries.map(toSummaryLine);
+    const incomingLines = summaryEntries.map(formatSummaryLine);
     const mergedLines = mergeSummaryLines(storedSummary.lines, incomingLines);
     if (incomingLines.length > 0) {
       await this.#writeStoredSummary(sessionId, mergedLines);
