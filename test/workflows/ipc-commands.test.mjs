@@ -42,7 +42,6 @@ test('workflow:run:start dispatches to engine and emits targeted command status'
           state: 'running',
         };
       },
-      async resumeRun() {},
       async cancelRun() {},
       listRuns() {
         return [];

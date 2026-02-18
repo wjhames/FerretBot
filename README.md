@@ -10,7 +10,7 @@ FerretBot is a local-first agent runtime. It runs on your machine, talks to a lo
 - Event-driven core (bus, lifecycle, IPC)
 - Agent loop with tool-call cycle and parser retries
 - Token-budgeted context assembly from workspace prompt layers
-- Workflow engine for YAML DAGs with retries/checks/approval gates
+- Workflow engine for YAML DAGs with retries/checks
 - Built-in tools: `bash`, `read`, `write`
 - Skills loaded at global, workflow, and step levels
 - Session memory (JSONL) + durable workspace memory
@@ -64,7 +64,7 @@ npm run cli -- message "Hello"
 
 - Workflows default to `./.ferretbot/workflows/<workflow-id>/workflow.yaml`.
 - Override workflow root with `workflows.rootDir` in `~/.ferretbot/config.json`.
-- Engine supports `agent`, `wait_for_input`, and system file steps.
+- Engine supports `agent` and system file steps.
 - `loadSkills` resolution order: step, then workflow, then global.
 
 ## Commands
