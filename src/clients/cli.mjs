@@ -7,7 +7,6 @@ import { DEFAULT_AGENT_SOCKET_PATH } from '../core/config-defaults.mjs';
 const DEFAULT_SOCKET_PATH = DEFAULT_AGENT_SOCKET_PATH;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = null;
-const DEFAULT_HELLO_TIMEOUT_MS = 4_000;
 
 function isMainModule() {
   const entryArg = process.argv[1];
@@ -402,7 +401,6 @@ export async function runCli(options = {}) {
     argv = process.argv.slice(2),
     stdout = process.stdout,
     stderr = process.stderr,
-    helloTimeoutMs = DEFAULT_HELLO_TIMEOUT_MS,
     clientFactory = (clientOptions) => new IpcNdjsonClient(clientOptions),
   } = options;
 
@@ -484,15 +482,7 @@ export async function runCli(options = {}) {
 
   client.connect();
 
-  const helloTimer = setTimeout(() => {
-    if (!resolved) {
-      stderr.write(`Timed out waiting for IPC hello after ${helloTimeoutMs}ms.\n`);
-      finish(1);
-    }
-  }, helloTimeoutMs);
-
   const code = await done;
-  clearTimeout(helloTimer);
   client.disconnect();
   return code;
 }
