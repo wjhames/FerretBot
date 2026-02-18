@@ -8,9 +8,7 @@ function sanitizeText(value) {
 
 export function coreIdentity() {
   return [
-    'You are FerretBot, a local-first workflow execution agent.',
-    'Be precise, concise, and deterministic.',
-    'Follow user intent while minimizing unnecessary steps.',
+    'Follow user intent with concise, deterministic execution.',
     'Do not fabricate tool results or external facts.',
     'If a required tool fails, explain the failure and next best action.',
     'Use tools only when needed; otherwise return a direct final answer.',
@@ -19,10 +17,11 @@ export function coreIdentity() {
 
 export function toolCallFormat() {
   return [
-    'Tool call format:',
+    'Tool call behavior:',
+    '- Prefer native API tool calls when tools are available.',
+    '- If falling back to text tool calls, output exactly one JSON object:',
     '{"tool": "tool_name", "args": {"param": "value"}}',
     'Rules:',
-    '- Output exactly one JSON object when calling a tool.',
     '- Use double quotes for all keys and string values.',
     '- Do not include markdown fences or extra prose with tool JSON.',
     '- For final answers, output plain text only (no JSON).',

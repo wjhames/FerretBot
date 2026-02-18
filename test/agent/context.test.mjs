@@ -62,8 +62,40 @@ test('context build enforces input budget and assembles deterministic layers', (
     .map((message) => message.content)
     .join('\n');
 
-  assert.match(systemJoined, /Tool call format:/);
+  assert.match(systemJoined, /Tool call behavior:/);
+  assert.doesNotMatch(systemJoined, /Available tools:/);
   assert.match(systemJoined, /Step 1: Bootstrap project/);
+});
+
+test('tool schema prompt text is opt-in for non-native tool models', () => {
+  const context = createAgentContext({
+    contextLimit: 900,
+    outputReserve: 120,
+    completionSafetyBuffer: 16,
+  });
+
+  const disabled = context.buildMessages({
+    step: { id: 1, total: 1, instruction: 'Test tool rendering' },
+    tools: [{ name: 'read', description: 'Read file content', schema: { type: 'object' } }],
+  });
+  const disabledText = disabled.messages
+    .filter((message) => message.role === 'system')
+    .map((message) => message.content)
+    .join('\n');
+  assert.doesNotMatch(disabledText, /Available tools:/);
+  assert.doesNotMatch(disabledText, /Tool: read/);
+
+  const enabled = context.buildMessages({
+    step: { id: 1, total: 1, instruction: 'Test tool rendering' },
+    tools: [{ name: 'read', description: 'Read file content', schema: { type: 'object' } }],
+    includeToolSchemasInPrompt: true,
+  });
+  const enabledText = enabled.messages
+    .filter((message) => message.role === 'system')
+    .map((message) => message.content)
+    .join('\n');
+  assert.match(enabledText, /Available tools:/);
+  assert.match(enabledText, /Tool: read/);
 });
 
 test('dynamic output budget scales up when input usage is low', () => {

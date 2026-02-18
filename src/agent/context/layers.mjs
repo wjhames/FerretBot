@@ -74,6 +74,7 @@ export function buildLayerText(options = {}) {
     step,
     extraRules = '',
     tools = [],
+    includeToolSchemasInPrompt = false,
     promptLayers = {},
     skillContent = '',
     priorSteps = [],
@@ -86,7 +87,7 @@ export function buildLayerText(options = {}) {
   });
 
   const stepScopeParts = [];
-  const toolText = formatToolSchemas(tools);
+  const toolText = includeToolSchemasInPrompt ? formatToolSchemas(tools) : '';
   if (step?.instruction) {
     stepScopeParts.push(`Current step scope:\n${toText(step.instruction).trim()}`);
   }

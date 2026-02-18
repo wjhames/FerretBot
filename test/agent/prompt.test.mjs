@@ -12,8 +12,10 @@ test('coreIdentity and toolCallFormat include critical execution rules', () => {
   const identity = coreIdentity();
   const format = toolCallFormat();
 
-  assert.match(identity, /FerretBot/);
+  assert.doesNotMatch(identity, /FerretBot/);
   assert.match(identity, /deterministic/i);
+  assert.match(identity, /Do not fabricate tool results/i);
+  assert.match(format, /Prefer native API tool calls/i);
   assert.match(format, /\{"tool": "tool_name", "args":/);
   assert.match(format, /plain text only/i);
 });
@@ -34,8 +36,8 @@ test('buildSystemPrompt composes step-specific sections deterministically', () =
     extraRules: 'Never leak secrets.',
   });
 
-  assert.match(prompt, /FerretBot/);
-  assert.match(prompt, /Tool call format:/);
+  assert.match(prompt, /Do not fabricate tool results/);
+  assert.match(prompt, /Tool call behavior:/);
   assert.match(prompt, /step 1 of 3/);
   assert.match(prompt, /Never leak secrets/);
 });
