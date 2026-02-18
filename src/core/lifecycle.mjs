@@ -131,10 +131,7 @@ function defaultCreateWorkspaceManager({ config = {} }) {
 }
 
 function defaultCreateWorkspaceBootstrapManager({ config = {}, workspaceManager } = {}) {
-  if (
-    !workspaceManager
-    || typeof workspaceManager.readTextFile !== 'function'
-  ) {
+  if (!workspaceManager) {
     return null;
   }
 
