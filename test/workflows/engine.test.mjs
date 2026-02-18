@@ -77,7 +77,6 @@ function makeWorkflow(overrides = {}) {
         successChecks: [],
         timeout: null,
         retries: 0,
-        approval: false,
         condition: null,
       },
     ],
@@ -127,8 +126,8 @@ test('completing a step advances to next and completes the run', async () => {
     const bus = new FakeBus();
     const wf = makeWorkflow({
       steps: [
-        { id: 's1', name: 's1', instruction: 'first', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], timeout: null, retries: 0, approval: false, condition: null },
-        { id: 's2', name: 's2', instruction: 'second', tools: ['read'], loadSkills: [], dependsOn: ['s1'], successChecks: [], timeout: null, retries: 0, approval: false, condition: null },
+        { id: 's1', name: 's1', instruction: 'first', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], timeout: null, retries: 0, condition: null },
+        { id: 's2', name: 's2', instruction: 'second', tools: ['read'], loadSkills: [], dependsOn: ['s1'], successChecks: [], timeout: null, retries: 0, condition: null },
       ],
     });
     const registry = makeRegistry([wf]);
@@ -169,8 +168,8 @@ test('dependency ordering prevents step from starting before deps complete', asy
     const bus = new FakeBus();
     const wf = makeWorkflow({
       steps: [
-        { id: 'a', name: 'a', instruction: 'do a', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], timeout: null, retries: 0, approval: false, condition: null },
-        { id: 'b', name: 'b', instruction: 'do b', tools: ['bash'], loadSkills: [], dependsOn: ['a'], successChecks: [], timeout: null, retries: 0, approval: false, condition: null },
+        { id: 'a', name: 'a', instruction: 'do a', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], timeout: null, retries: 0, condition: null },
+        { id: 'b', name: 'b', instruction: 'do b', tools: ['bash'], loadSkills: [], dependsOn: ['a'], successChecks: [], timeout: null, retries: 0, condition: null },
       ],
     });
     const registry = makeRegistry([wf]);
@@ -196,7 +195,7 @@ test('successChecks failure retries up to limit then fails the run', async () =>
           id: 's1', name: 's1', instruction: 'do it', tools: ['bash'],
           loadSkills: [], dependsOn: [],
           successChecks: [{ type: 'contains', text: 'SUCCESS' }],
-          timeout: null, retries: 1, approval: false, condition: null,
+          timeout: null, retries: 1, condition: null,
         },
       ],
     });
@@ -239,7 +238,7 @@ test('successChecks pass after retry', async () => {
           id: 's1', name: 's1', instruction: 'do it', tools: ['bash'],
           loadSkills: [], dependsOn: [],
           successChecks: [{ type: 'contains', text: 'SUCCESS' }],
-          timeout: null, retries: 1, approval: false, condition: null,
+          timeout: null, retries: 1, condition: null,
         },
       ],
     });
@@ -262,39 +261,6 @@ test('successChecks pass after retry', async () => {
 
     await waitFor(() => run.state === 'completed');
     assert.equal(run.state, 'completed');
-    engine.stop();
-  });
-});
-
-test('approval gate pauses run and resumeRun continues', async () => {
-  await withTempDir(async (storageDir) => {
-    const bus = new FakeBus();
-    const wf = makeWorkflow({
-      steps: [
-        {
-          id: 's1', name: 's1', instruction: 'needs approval', tools: ['bash'],
-          loadSkills: [], dependsOn: [], successChecks: [],
-          timeout: null, retries: 0, approval: true, condition: null,
-        },
-      ],
-    });
-    const registry = makeRegistry([wf]);
-    const engine = createWorkflowEngine({ bus, registry, storageDir });
-    engine.start();
-
-    const run = await engine.startRun('test-wf');
-    assert.equal(run.state, 'waiting_approval');
-
-    const approvalEvents = bus.eventsOfType('workflow:needs_approval');
-    assert.equal(approvalEvents.length, 1);
-    assert.equal(approvalEvents[0].content.stepId, 's1');
-
-    const startsBefore = bus.eventsOfType('workflow:step:start').length;
-    await engine.resumeRun(run.id);
-
-    assert.equal(run.state, 'running');
-    assert.ok(bus.eventsOfType('workflow:step:start').length > startsBefore);
-
     engine.stop();
   });
 });
@@ -389,7 +355,6 @@ test('system workflow steps execute without agent loop and complete run', async 
           successChecks: [],
           timeout: null,
           retries: 0,
-          approval: false,
           condition: null,
         },
         {
@@ -405,7 +370,6 @@ test('system workflow steps execute without agent loop and complete run', async 
           successChecks: [],
           timeout: null,
           retries: 0,
-          approval: false,
           condition: null,
         },
       ],
@@ -422,275 +386,6 @@ test('system workflow steps execute without agent loop and complete run', async 
     const exists = await workspaceManager.exists('out.txt');
     assert.equal(exists, false);
     assert.ok(bus.eventsOfType('workflow:run:complete').some((event) => event.content?.state === 'completed'));
-
-    engine.stop();
-  });
-});
-
-test('wait_for_input steps pause run, capture user input, and continue', async () => {
-  await withTempDir(async (storageDir) => {
-    const workspaceDir = path.join(storageDir, 'workspace');
-    const workspaceManager = createWorkspaceManager({ baseDir: workspaceDir });
-    await workspaceManager.ensureWorkspace();
-
-    const bus = new FakeBus();
-    const wf = makeWorkflow({
-      id: 'input-wf',
-      steps: [
-        {
-          id: 'ask-name',
-          name: 'ask-name',
-          type: 'wait_for_input',
-          instruction: '',
-          prompt: 'What is your name?',
-          responseKey: 'user_name',
-          tools: [],
-          loadSkills: [],
-          dependsOn: [],
-          successChecks: [],
-          timeout: null,
-          retries: 0,
-          approval: false,
-          condition: null,
-          path: null,
-          content: null,
-          mode: null,
-        },
-        {
-          id: 'write-name',
-          name: 'write-name',
-          type: 'system_write_file',
-          instruction: '',
-          path: 'name.txt',
-          content: '{{args.user_name}}',
-          tools: [],
-          loadSkills: [],
-          dependsOn: ['ask-name'],
-          successChecks: [],
-          timeout: null,
-          retries: 0,
-          approval: false,
-          condition: null,
-          prompt: null,
-          responseKey: null,
-          mode: null,
-        },
-      ],
-    });
-
-    const registry = makeRegistry([wf]);
-    const engine = createWorkflowEngine({ bus, registry, storageDir, workspaceManager });
-    engine.start();
-
-    const run = await engine.startRun('input-wf');
-    assert.equal(run.state, 'waiting_input');
-    assert.ok(bus.eventsOfType('workflow:needs_input').length >= 1);
-    assert.equal(engine.hasPendingInput(), false);
-
-    await bus.emit({
-      type: 'user:input',
-      channel: 'tui',
-      sessionId: 's-input',
-      content: { text: 'hello' },
-    });
-
-    assert.equal(run.state, 'waiting_input');
-    assert.equal(run.args.user_name, undefined);
-    assert.equal(run.args.sessionId, 's-input');
-    assert.equal(engine.hasPendingInput('s-input'), true);
-
-    await bus.emit({
-      type: 'user:input',
-      channel: 'tui',
-      sessionId: 's-input',
-      content: { text: 'Morgan' },
-    });
-
-    await waitFor(() => run.state === 'completed');
-    assert.equal(run.state, 'completed');
-    assert.equal(run.args.user_name, 'Morgan');
-    assert.equal(await workspaceManager.readTextFile('name.txt'), 'Morgan');
-
-    engine.stop();
-  });
-});
-
-test('wait_for_input stores literal input for each step', async () => {
-  await withTempDir(async (storageDir) => {
-    const workspaceDir = path.join(storageDir, 'workspace');
-    const workspaceManager = createWorkspaceManager({ baseDir: workspaceDir });
-    await workspaceManager.ensureWorkspace();
-
-    const bus = new FakeBus();
-    const wf = makeWorkflow({
-      id: 'mixed-name-wf',
-      steps: [
-        {
-          id: 'ask-user',
-          name: 'ask-user',
-          type: 'wait_for_input',
-          instruction: '',
-          prompt: 'Who are you?',
-          responseKey: 'user_name',
-          tools: [],
-          loadSkills: [],
-          dependsOn: [],
-          successChecks: [],
-          timeout: null,
-          retries: 0,
-          approval: false,
-          condition: null,
-          path: null,
-          content: null,
-          mode: null,
-        },
-        {
-          id: 'ask-assistant',
-          name: 'ask-assistant',
-          type: 'wait_for_input',
-          instruction: '',
-          prompt: 'Who am I?',
-          responseKey: 'assistant_name',
-          tools: [],
-          loadSkills: [],
-          dependsOn: ['ask-user'],
-          successChecks: [],
-          timeout: null,
-          retries: 0,
-          approval: false,
-          condition: null,
-          path: null,
-          content: null,
-          mode: null,
-        },
-        {
-          id: 'write-both',
-          name: 'write-both',
-          type: 'system_write_file',
-          instruction: '',
-          path: 'names.txt',
-          content: 'user={{args.user_name}} assistant={{args.assistant_name}}',
-          tools: [],
-          loadSkills: [],
-          dependsOn: ['ask-assistant'],
-          successChecks: [],
-          timeout: null,
-          retries: 0,
-          approval: false,
-          condition: null,
-          prompt: null,
-          responseKey: null,
-          mode: null,
-        },
-      ],
-    });
-
-    const registry = makeRegistry([wf]);
-    const engine = createWorkflowEngine({ bus, registry, storageDir, workspaceManager });
-    engine.start();
-
-    const run = await engine.startRun('mixed-name-wf');
-    assert.equal(run.state, 'waiting_input');
-
-    await bus.emit({
-      type: 'user:input',
-      channel: 'tui',
-      sessionId: 'mix-1',
-      content: { text: 'Hello' },
-    });
-
-    await bus.emit({
-      type: 'user:input',
-      channel: 'tui',
-      sessionId: 'mix-1',
-      content: { text: 'Jason' },
-    });
-
-    await waitFor(() => run.state === 'waiting_input');
-    assert.equal(run.args.user_name, 'Jason');
-    assert.equal(run.args.assistant_name, undefined);
-
-    await bus.emit({
-      type: 'user:input',
-      channel: 'tui',
-      sessionId: 'mix-1',
-      content: { text: 'FerretBot' },
-    });
-
-    await waitFor(() => run.state === 'completed');
-    assert.equal(run.args.user_name, 'Jason');
-    assert.equal(run.args.assistant_name, 'FerretBot');
-    assert.equal(await workspaceManager.readTextFile('names.txt'), 'user=Jason assistant=FerretBot');
-
-    engine.stop();
-  });
-});
-
-test('wait_for_input does not consume mismatched-session input for non-bootstrap runs', async () => {
-  await withTempDir(async (storageDir) => {
-    const workspaceDir = path.join(storageDir, 'workspace');
-    const workspaceManager = createWorkspaceManager({ baseDir: workspaceDir });
-    await workspaceManager.ensureWorkspace();
-
-    const bus = new FakeBus();
-    const wf = makeWorkflow({
-      id: 'session-bound-wf',
-      steps: [
-        {
-          id: 'ask-name',
-          name: 'ask-name',
-          type: 'wait_for_input',
-          instruction: '',
-          prompt: 'What is your name?',
-          responseKey: 'user_name',
-          tools: [],
-          loadSkills: [],
-          dependsOn: [],
-          successChecks: [],
-          timeout: null,
-          retries: 0,
-          approval: false,
-          condition: null,
-          path: null,
-          content: null,
-          mode: null,
-        },
-      ],
-    });
-
-    const registry = makeRegistry([wf]);
-    const engine = createWorkflowEngine({ bus, registry, storageDir, workspaceManager });
-    engine.start();
-
-    const run = await engine.startRun('session-bound-wf');
-    assert.equal(run.state, 'waiting_input');
-
-    await bus.emit({
-      type: 'user:input',
-      channel: 'tui',
-      sessionId: 'session-a',
-      content: { text: 'hello' },
-    });
-    await waitFor(() => run.args.sessionId === 'session-a');
-    assert.equal(run.args.sessionId, 'session-a');
-    assert.equal(run.args.user_name, undefined);
-
-    await waitFor(() => bus.eventsOfType('workflow:needs_input').length >= 2);
-    const needsInputBefore = bus.eventsOfType('workflow:needs_input').length;
-    const mismatchedEvent = {
-      type: 'user:input',
-      channel: 'tui',
-      sessionId: 'session-b',
-      content: { text: 'Taylor' },
-    };
-    await bus.emit(mismatchedEvent);
-    await delay(10);
-
-    assert.notEqual(mismatchedEvent.__workflowConsumed, true);
-    assert.equal(run.state, 'waiting_input');
-    assert.equal(run.args.sessionId, 'session-a');
-    assert.equal(run.args.user_name, undefined);
-    assert.equal(bus.eventsOfType('workflow:needs_input').length, needsInputBefore);
 
     engine.stop();
   });

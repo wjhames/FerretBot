@@ -492,7 +492,7 @@ test('loop default context includes a system prompt message', async () => {
 
   assert.equal(providerCalls.length, 1);
   assert.equal(providerCalls[0].messages[0].role, 'system');
-  assert.match(providerCalls[0].messages[0].content, /You are FerretBot/);
+  assert.match(providerCalls[0].messages[0].content, /Follow user intent/);
   assert.equal(providerCalls[0].messages.at(-1).role, 'user');
   assert.equal(providerCalls[0].messages.at(-1).content, 'hello');
 });

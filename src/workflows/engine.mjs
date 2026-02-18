@@ -8,8 +8,6 @@ const DEFAULT_RUNS_DIR = path.join(DEFAULT_AGENT_DIR, 'workflow-runs');
 const RUN_STATE = {
   queued: 'queued',
   running: 'running',
-  waitingApproval: 'waiting_approval',
-  waitingInput: 'waiting_input',
   completed: 'completed',
   failed: 'failed',
   cancelled: 'cancelled',
@@ -27,17 +25,6 @@ const SUCCESS_STATES = new Set([STEP_STATE.completed, STEP_STATE.skipped]);
 
 function formatIsoNow() {
   return new Date().toISOString();
-}
-
-function coerceInputText(event) {
-  const content = event?.content;
-  if (typeof content === 'string') {
-    return content.trim();
-  }
-  if (content && typeof content === 'object' && typeof content.text === 'string') {
-    return content.text.trim();
-  }
-  return String(content ?? '').trim();
 }
 
 function resolvePathValue(objectValue, pathValue) {
@@ -68,7 +55,6 @@ function createRunRecord(id, workflow, args) {
     workflowVersion: workflow.version,
     state: RUN_STATE.queued,
     args: args ?? {},
-    approvedStepId: null,
     steps: workflow.steps.map((step) => ({
       id: step.id,
       state: STEP_STATE.pending,
@@ -118,11 +104,6 @@ export class WorkflowEngine {
         void this.#handleStepComplete(event);
       }),
     );
-    this.#unsubscribes.push(
-      this.#bus.on('user:input', (event) => {
-        void this.#handleUserInput(event);
-      }),
-    );
   }
 
   stop() {
@@ -152,22 +133,6 @@ export class WorkflowEngine {
     return run;
   }
 
-  async resumeRun(runId) {
-    const run = this.#runs.get(runId);
-    if (!run) throw new Error(`run ${runId} not found.`);
-
-    if (run.state !== RUN_STATE.waitingApproval) {
-      throw new Error(`run ${runId} is not waiting for approval (state: ${run.state}).`);
-    }
-
-    run.state = RUN_STATE.running;
-    run.updatedAt = formatIsoNow();
-    await this.#persistRun(run);
-
-    await this.#advance(run);
-    return run;
-  }
-
   async cancelRun(runId) {
     const run = this.#runs.get(runId);
     if (!run) throw new Error(`run ${runId} not found.`);
@@ -190,19 +155,6 @@ export class WorkflowEngine {
 
   listRuns() {
     return [...this.#runs.values()];
-  }
-
-  hasPendingInput(sessionId = null) {
-    if (!sessionId) {
-      return false;
-    }
-
-    return this.listRuns().some((run) =>
-      run.state === RUN_STATE.waitingInput
-      && run.args
-      && typeof run.args === 'object'
-      && run.args.sessionId === sessionId,
-    );
   }
 
   async #handleStepComplete(event) {
@@ -251,24 +203,6 @@ export class WorkflowEngine {
     }
 
     const workflowStep = workflow.steps.find((s) => s.id === nextStep.id);
-
-    if (workflowStep?.approval && run.approvedStepId !== nextStep.id) {
-      run.state = RUN_STATE.waitingApproval;
-      run.approvedStepId = nextStep.id;
-      run.updatedAt = formatIsoNow();
-      await this.#persistRun(run);
-      await this.#bus.emit({
-        type: 'workflow:needs_approval',
-        content: {
-          runId: run.id,
-          stepId: nextStep.id,
-          instruction: workflowStep.instruction,
-        },
-      });
-      return;
-    }
-
-    run.approvedStepId = null;
     nextStep.state = STEP_STATE.active;
     nextStep.startedAt = formatIsoNow();
     run.state = RUN_STATE.running;
@@ -294,50 +228,6 @@ export class WorkflowEngine {
     });
 
     const stepType = String(workflowStep?.type ?? 'agent');
-    if (stepType === 'wait_for_input') {
-      const responseKey = workflowStep?.responseKey;
-      const existingValue = responseKey && run.args && typeof run.args === 'object'
-        ? String(run.args[responseKey] ?? '').trim()
-        : '';
-      if (existingValue) {
-        await this.#completeActiveStep({
-          run,
-          runStep: nextStep,
-          workflowStep,
-          result: existingValue,
-          toolResults: [],
-          emitStepCompleteEvent: false,
-        });
-        return;
-      }
-
-      run.state = RUN_STATE.waitingInput;
-      run.updatedAt = formatIsoNow();
-      await this.#persistRun(run);
-
-      const prompt = String(workflowStep?.prompt ?? '').trim();
-      await this.#bus.emit({
-        type: 'workflow:needs_input',
-        sessionId: run.args?.sessionId ?? undefined,
-        content: {
-          runId: run.id,
-          stepId: workflowStep.id,
-          prompt,
-          responseKey: workflowStep.responseKey,
-        },
-      });
-
-      await this.#bus.emit({
-        type: 'agent:response',
-        sessionId: run.args?.sessionId ?? undefined,
-        content: {
-          text: prompt,
-          finishReason: 'workflow_input',
-        },
-      });
-      return;
-    }
-
     if (stepType !== 'agent') {
       await this.#executeSystemStep(run, workflowStep, nextStep);
     }
@@ -455,109 +345,6 @@ export class WorkflowEngine {
       type: 'workflow:run:complete',
       content: { runId: run.id, workflowId: run.workflowId, state: RUN_STATE.failed },
     });
-  }
-
-  async #handleUserInput(event) {
-    const run = this.#findRunWaitingForInput(event?.sessionId ?? null);
-    if (!run) {
-      return;
-    }
-
-    const workflow = this.#registry.get(run.workflowId, run.workflowVersion);
-    if (!workflow) {
-      return;
-    }
-
-    const runStep = run.steps.find((step) => step.state === STEP_STATE.active);
-    if (!runStep) {
-      return;
-    }
-
-    const workflowStep = workflow.steps.find((step) => step.id === runStep.id);
-    if (!workflowStep || String(workflowStep.type ?? 'agent') !== 'wait_for_input') {
-      return;
-    }
-
-    if (!run.args || typeof run.args !== 'object') {
-      run.args = {};
-    }
-
-    const incomingSessionId = event?.sessionId ?? null;
-    const boundSessionId = run.args.sessionId ?? null;
-    if (!boundSessionId && incomingSessionId) {
-      run.args.sessionId = incomingSessionId;
-      run.updatedAt = formatIsoNow();
-      await this.#persistRun(run);
-
-      event.__workflowConsumed = true;
-
-      const prompt = String(workflowStep?.prompt ?? '').trim();
-      await this.#bus.emit({
-        type: 'workflow:needs_input',
-        sessionId: incomingSessionId,
-        content: {
-          runId: run.id,
-          stepId: workflowStep.id,
-          prompt,
-          responseKey: workflowStep.responseKey,
-        },
-      });
-      await this.#bus.emit({
-        type: 'agent:response',
-        sessionId: incomingSessionId,
-        content: {
-          text: prompt,
-          finishReason: 'workflow_input',
-        },
-      });
-      return;
-    }
-
-    if (boundSessionId && incomingSessionId && boundSessionId !== incomingSessionId) {
-      return;
-    }
-
-    const inputText = coerceInputText(event);
-    if (!inputText) {
-      return;
-    }
-
-    run.args[workflowStep.responseKey] = inputText;
-    run.state = RUN_STATE.running;
-    run.updatedAt = formatIsoNow();
-    await this.#persistRun(run);
-
-    event.__workflowConsumed = true;
-
-    await this.#completeActiveStep({
-      run,
-      runStep,
-      workflowStep,
-      result: inputText,
-      toolResults: [],
-      emitStepCompleteEvent: false,
-    });
-  }
-
-  #findRunWaitingForInput(sessionId = null) {
-    const candidates = this.listRuns()
-      .filter((run) => run.state === RUN_STATE.waitingInput)
-      .sort((left, right) => left.id - right.id);
-
-    if (candidates.length === 0) {
-      return null;
-    }
-
-    if (sessionId && sessionId.length > 0) {
-      const matched = candidates.find((run) =>
-        !run.args?.sessionId || run.args.sessionId === sessionId,
-      );
-      if (matched) {
-        return matched;
-      }
-    }
-
-    return candidates[0];
   }
 
   #renderTemplate(text, run) {

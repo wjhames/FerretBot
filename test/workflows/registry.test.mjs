@@ -21,7 +21,7 @@ function makeWorkflow(overrides = {}) {
     name: 'Test Flow',
     description: 'A test workflow',
     inputs: [],
-    steps: [{ id: 'step-1', name: 'step-1', instruction: 'Do it', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], timeout: null, retries: 0, approval: false, condition: null }],
+    steps: [{ id: 'step-1', name: 'step-1', instruction: 'Do it', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], timeout: null, retries: 0, condition: null }],
     ...overrides,
   };
 }
