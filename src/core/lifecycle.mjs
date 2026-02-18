@@ -11,6 +11,7 @@ import { createWorkspaceBootstrapManager } from '../agent/bootstrap.mjs';
 import { createToolRegistry } from '../tools/registry.mjs';
 import { createWorkflowRegistry } from '../workflows/registry.mjs';
 import { createWorkflowEngine } from '../workflows/engine.mjs';
+import { registerWorkflowIpcCommands } from '../workflows/ipc-commands.mjs';
 import { createSkillLoader } from '../skills/loader.mjs';
 import { createSessionMemory } from '../memory/session.mjs';
 import { createWorkspaceManager } from '../memory/workspace.mjs';
@@ -271,6 +272,11 @@ export class AgentLifecycle {
     await workflowRegistry.loadAll();
     const workflowEngine = this.#createWorkflowEngine({ bus, registry: workflowRegistry, config, workspaceManager });
     workflowEngine.start();
+    const unregisterWorkflowIpcCommands = registerWorkflowIpcCommands({
+      bus,
+      workflowEngine,
+      workflowRegistry,
+    });
 
     const toolRegistry = this.#createToolRegistry({
       config,
@@ -289,6 +295,7 @@ export class AgentLifecycle {
       toolRegistry,
       workflowRegistry,
       workflowEngine,
+      unregisterWorkflowIpcCommands,
       skillLoader,
       sessionMemory,
       workspaceManager,
@@ -351,7 +358,14 @@ export class AgentLifecycle {
 
     this.#shuttingDown = true;
 
-    const { bus, ipcServer, scheduler, workflowEngine, agentLoop } = this.#runtime;
+    const {
+      bus,
+      ipcServer,
+      scheduler,
+      workflowEngine,
+      agentLoop,
+      unregisterWorkflowIpcCommands,
+    } = this.#runtime;
 
     try {
       if (typeof ipcServer.stopAccepting === 'function') {
@@ -371,6 +385,10 @@ export class AgentLifecycle {
 
       if (typeof scheduler.stop === 'function') {
         await scheduler.stop();
+      }
+
+      if (typeof unregisterWorkflowIpcCommands === 'function') {
+        unregisterWorkflowIpcCommands();
       }
 
       if (typeof workflowEngine?.stop === 'function') {

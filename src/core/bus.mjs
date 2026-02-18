@@ -9,6 +9,10 @@ const DEFAULT_ALLOWED_EVENT_TYPES = [
   'workflow:needs_approval',
   'workflow:needs_input',
   'workflow:run:complete',
+  'workflow:run:start',
+  'workflow:run:resume',
+  'workflow:run:cancel',
+  'workflow:run:list',
 ];
 
 export class EventBus {
