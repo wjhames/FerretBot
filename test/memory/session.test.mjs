@@ -43,20 +43,34 @@ test('collects latest turns up to token budget and summarizes older ones', async
   assert.match(result.summary, /alpha/);
 });
 
-test('persists structured summary lines across collection calls', async () => {
-  const memory = new SessionMemory({ baseDir: path.join(FIXTURE_ROOT, 'summary-persist') });
+test('persists generated summary text across collection calls', async () => {
+  const calls = [];
+  const memory = new SessionMemory({
+    baseDir: path.join(FIXTURE_ROOT, 'summary-persist'),
+    conversationSummarizer: async ({ priorSummary, droppedTranscript }) => {
+      calls.push({ priorSummary, droppedTranscript });
+      const droppedCount = droppedTranscript.split('\n').filter(Boolean).length;
+      return `summary(${priorSummary ? 'with-prior' : 'new'})/${droppedCount}`;
+    },
+  });
   await memory.appendTurn('session-summary', { role: 'user', content: 'first issue discussed' });
   await memory.appendTurn('session-summary', { role: 'assistant', content: 'first resolution proposed' });
   await memory.appendTurn('session-summary', { role: 'user', content: 'second issue discussed' });
 
   const first = await memory.collectConversation('session-summary', { tokenLimit: 1 });
-  assert.match(first.summary, /first issue/);
+  assert.equal(first.summary, 'summary(new)/2');
 
   await memory.appendTurn('session-summary', { role: 'assistant', content: 'follow-up with details' });
   const second = await memory.collectConversation('session-summary', { tokenLimit: 1 });
 
-  assert.match(second.summary, /first issue|second issue/);
-  assert.match(second.summary, /first resolution|follow-up|second issue/);
+  assert.equal(second.summary, 'summary(with-prior)/3');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].priorSummary, 'summary(new)/2');
+
+  const summaryPath = path.join(FIXTURE_ROOT, 'summary-persist', 'session-summary.summary.json');
+  const persisted = JSON.parse(await fs.readFile(summaryPath, 'utf-8'));
+  assert.equal(persisted.version, 2);
+  assert.equal(persisted.summary, 'summary(with-prior)/3');
 });
 
 test('returns full history when token limit is not set', async () => {

@@ -117,9 +117,54 @@ function defaultCreateWorkflowRegistry({ config = {}, workspaceManager } = {}) {
   return createWorkflowRegistry({ baseDir });
 }
 
-function defaultCreateSessionMemory({ config = {} }) {
+function createConversationSummarizer(provider, config = {}) {
+  if (!provider || typeof provider.chatCompletion !== 'function') {
+    return null;
+  }
+
+  const maxTokens = Number.isFinite(config.memory?.summaryMaxTokens)
+    ? Math.max(64, Math.floor(config.memory.summaryMaxTokens))
+    : 160;
+  const model = typeof config.memory?.summaryModel === 'string' && config.memory.summaryModel.trim().length > 0
+    ? config.memory.summaryModel.trim()
+    : undefined;
+
+  return async ({ priorSummary = '', droppedTranscript = '' } = {}) => {
+    if (typeof droppedTranscript !== 'string' || droppedTranscript.trim().length === 0) {
+      return '';
+    }
+
+    const completion = await provider.chatCompletion({
+      messages: [
+        {
+          role: 'system',
+          content: 'Summarize earlier conversation for future context. Keep durable facts, decisions, preferences, constraints, and open work. Plain text only, maximum 120 words.',
+        },
+        {
+          role: 'user',
+          content: [
+            'Existing summary:',
+            priorSummary.trim().length > 0 ? priorSummary.trim() : '[none]',
+            '',
+            'Newly dropped transcript lines:',
+            droppedTranscript,
+            '',
+            'Return a revised single summary only.',
+          ].join('\n'),
+        },
+      ],
+      maxTokens,
+      ...(model ? { model } : {}),
+    });
+
+    return typeof completion?.text === 'string' ? completion.text.trim() : '';
+  };
+}
+
+function defaultCreateSessionMemory({ config = {}, provider } = {}) {
   return createSessionMemory({
     baseDir: config.memory?.sessionsDir ?? config.session?.storageDir,
+    conversationSummarizer: createConversationSummarizer(provider, config),
   });
 }
 
@@ -210,7 +255,7 @@ export class AgentLifecycle {
     const parser = this.#createParser(config);
 
     const skillLoader = this.#createSkillLoader({ config });
-    const sessionMemory = this.#createSessionMemory({ config });
+    const sessionMemory = this.#createSessionMemory({ config, provider });
     const workspaceManager = this.#createWorkspaceManager({ config });
     if (workspaceManager && typeof workspaceManager.ensureWorkspace === 'function') {
       await workspaceManager.ensureWorkspace();

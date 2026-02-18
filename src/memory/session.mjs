@@ -10,7 +10,7 @@ const DEFAULT_TOKEN_ESTIMATOR = Object.freeze({
 const SESSION_ID_SANITIZE = /[^a-z0-9._-]/gi;
 const SUMMARY_LINE_LIMIT = 4;
 const SUMMARY_SNIPPET_LENGTH = 60;
-const SUMMARY_MAX_LINES = 20;
+const SUMMARY_FALLBACK_CHAR_LIMIT = 300;
 
 function ensureSessionDir(baseDir) {
   return fs.mkdir(baseDir, { recursive: true });
@@ -61,22 +61,22 @@ function summarizeEntries(entries) {
   return `Earlier turns: ${lines.join(' | ')}`;
 }
 
-function mergeSummaryLines(existing = [], incoming = []) {
-  const merged = [...existing, ...incoming];
-  const deduped = [];
-  const seen = new Set();
-  for (const line of merged) {
-    if (typeof line !== 'string') {
-      continue;
-    }
-    const normalized = line.trim();
-    if (!normalized || seen.has(normalized)) {
-      continue;
-    }
-    seen.add(normalized);
-    deduped.push(normalized);
+function truncateSummaryText(text) {
+  const normalized = toSafeString(text).trim();
+  if (normalized.length <= SUMMARY_FALLBACK_CHAR_LIMIT) {
+    return normalized;
   }
-  return deduped.slice(-SUMMARY_MAX_LINES);
+  return `${normalized.slice(0, SUMMARY_FALLBACK_CHAR_LIMIT).trim()}...`;
+}
+
+function formatTranscript(entries = []) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return '';
+  }
+
+  return entries
+    .map((entry) => formatSummaryLine(entry))
+    .join('\n');
 }
 
 function normalizeEntry(entry) {
@@ -108,6 +108,7 @@ export class SessionMemory {
   #baseDir;
   #tokenEstimatorConfig;
   #dirEnsured;
+  #conversationSummarizer;
 
   constructor(options = {}) {
     this.#baseDir = path.resolve(options.baseDir ?? DEFAULT_SESSION_FOLDER);
@@ -116,6 +117,9 @@ export class SessionMemory {
       ...(options.tokenEstimatorConfig ?? {}),
     };
     this.#dirEnsured = false;
+    this.#conversationSummarizer = typeof options.conversationSummarizer === 'function'
+      ? options.conversationSummarizer
+      : null;
   }
 
   async #ensureDir() {
@@ -142,26 +146,66 @@ export class SessionMemory {
     try {
       const raw = await fs.readFile(filePath, 'utf-8');
       const parsed = JSON.parse(raw);
+      const text = toSafeString(parsed?.summary).trim();
+
+      if (text) {
+        return { text };
+      }
+
+      // Backward compatibility with old line-array format.
       const lines = Array.isArray(parsed?.lines)
-        ? parsed.lines.filter((line) => typeof line === 'string')
+        ? parsed.lines
+            .filter((line) => typeof line === 'string')
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0)
         : [];
-      return { lines };
+      if (lines.length > 0) {
+        return { text: `Earlier turns: ${lines.slice(-SUMMARY_LINE_LIMIT).join(' | ')}` };
+      }
+      return { text: '' };
     } catch (error) {
       if (error && error.code === 'ENOENT') {
-        return { lines: [] };
+        return { text: '' };
       }
-      return { lines: [] };
+      return { text: '' };
     }
   }
 
-  async #writeStoredSummary(sessionId, lines = []) {
+  async #writeStoredSummary(sessionId, summary = '') {
     const filePath = this.#resolveSummaryPath(sessionId);
     const payload = {
-      version: 1,
+      version: 2,
       updatedAt: Date.now(),
-      lines: lines.slice(-SUMMARY_MAX_LINES),
+      summary: truncateSummaryText(summary),
     };
     await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf-8');
+  }
+
+  async #summarizeDroppedEntries({ sessionId, priorSummary, droppedEntries }) {
+    if (droppedEntries.length === 0) {
+      return '';
+    }
+
+    const fallback = summarizeEntries(droppedEntries);
+    if (!this.#conversationSummarizer) {
+      return truncateSummaryText(fallback);
+    }
+
+    try {
+      const generated = await this.#conversationSummarizer({
+        sessionId,
+        priorSummary,
+        droppedEntries,
+        droppedTranscript: formatTranscript(droppedEntries),
+      });
+      const normalized = toSafeString(generated).trim();
+      if (!normalized) {
+        return truncateSummaryText(fallback);
+      }
+      return truncateSummaryText(normalized);
+    } catch {
+      return truncateSummaryText(fallback);
+    }
   }
 
   async appendTurn(sessionId, entry) {
@@ -234,16 +278,19 @@ export class SessionMemory {
       summaryEntries = turns.slice(0, turns.length - selected.length);
     }
 
-    const storedSummary = await this.#readStoredSummary(sessionId);
-    const incomingLines = summaryEntries.map(formatSummaryLine);
-    const mergedLines = mergeSummaryLines(storedSummary.lines, incomingLines);
-    if (incomingLines.length > 0) {
-      await this.#writeStoredSummary(sessionId, mergedLines);
+    if (summaryEntries.length === 0) {
+      return { turns: selected, summary: '' };
     }
 
-    const summary = mergedLines.length > 0
-      ? `Earlier turns: ${mergedLines.slice(-SUMMARY_LINE_LIMIT).join(' | ')}`
-      : summarizeEntries(summaryEntries);
+    const storedSummary = await this.#readStoredSummary(sessionId);
+    const summary = await this.#summarizeDroppedEntries({
+      sessionId,
+      priorSummary: storedSummary.text,
+      droppedEntries: summaryEntries,
+    });
+    if (summary) {
+      await this.#writeStoredSummary(sessionId, summary);
+    }
 
     return { turns: selected, summary };
   }
