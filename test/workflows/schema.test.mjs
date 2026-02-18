@@ -26,7 +26,6 @@ test('validates a minimal valid workflow', () => {
   assert.equal(result.workflow.steps.length, 1);
   assert.equal(result.workflow.steps[0].id, 'step-1');
   assert.equal(result.workflow.steps[0].retries, 0);
-  assert.equal(result.workflow.steps[0].approval, false);
   assert.equal(result.workflow.steps[0].condition, null);
 });
 
@@ -48,7 +47,6 @@ test('validates a workflow with all optional fields', () => {
         successChecks: [{ type: 'exit_code', expected: 0 }],
         timeout: 30000,
         retries: 2,
-        approval: true,
         condition: 'steps.init.output',
       },
     ],
@@ -62,7 +60,6 @@ test('validates a workflow with all optional fields', () => {
   assert.equal(step.name, 'Build Project');
   assert.equal(step.timeout, 30000);
   assert.equal(step.retries, 2);
-  assert.equal(step.approval, true);
   assert.equal(step.loadSkills.length, 1);
   assert.equal(step.successChecks.length, 1);
 });
@@ -174,23 +171,20 @@ test('rejects invalid system step definitions', () => {
   assert.ok(missingContent.errors.some((e) => e.includes('content is required for system_write_file')));
 });
 
-test('validates wait_for_input step requirements', () => {
-  const valid = validateWorkflow(minimalWorkflow({
-    steps: [{ id: 'ask', type: 'wait_for_input', prompt: 'What is your name?', responseKey: 'user_name' }],
+test('rejects deprecated wait_for_input step type', () => {
+  const result = validateWorkflow(minimalWorkflow({
+    steps: [{ id: 'ask', type: 'wait_for_input' }],
   }));
-  assert.equal(valid.valid, true);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.includes("invalid step type 'wait_for_input'")));
+});
 
-  const missingPrompt = validateWorkflow(minimalWorkflow({
-    steps: [{ id: 'ask', type: 'wait_for_input', responseKey: 'user_name' }],
+test('rejects deprecated approval field', () => {
+  const result = validateWorkflow(minimalWorkflow({
+    steps: [{ id: 'a', instruction: 'do it', tools: ['bash'], approval: true }],
   }));
-  assert.equal(missingPrompt.valid, false);
-  assert.ok(missingPrompt.errors.some((e) => e.includes('prompt is required for wait_for_input')));
-
-  const missingKey = validateWorkflow(minimalWorkflow({
-    steps: [{ id: 'ask', type: 'wait_for_input', prompt: 'Name?' }],
-  }));
-  assert.equal(missingKey.valid, false);
-  assert.ok(missingKey.errors.some((e) => e.includes('responseKey is required for wait_for_input')));
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.includes("unknown field 'approval'")));
 });
 
 test('requires step instruction', () => {

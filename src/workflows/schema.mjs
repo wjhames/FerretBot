@@ -6,12 +6,11 @@ const ALLOWED_WORKFLOW_FIELDS = new Set([
 
 const ALLOWED_STEP_FIELDS = new Set([
   'id', 'name', 'instruction', 'tools', 'loadSkills', 'dependsOn',
-  'successChecks', 'timeout', 'retries', 'approval', 'condition',
-  'type', 'path', 'content', 'mode', 'prompt', 'responseKey',
+  'successChecks', 'timeout', 'retries', 'condition',
+  'type', 'path', 'content', 'mode',
 ]);
 const ALLOWED_STEP_TYPES = new Set([
   'agent',
-  'wait_for_input',
   'system_write_file',
   'system_delete_file',
   'system_ensure_file',
@@ -177,19 +176,8 @@ export function validateWorkflow(raw) {
     }
 
     const stepPath = normalizeText(rawStep.path ?? '');
-    if (type !== 'agent' && type !== 'wait_for_input' && !stepPath) {
+    if (type !== 'agent' && !stepPath) {
       stepErrors.push('path is required for system steps.');
-    }
-
-    const prompt = rawStep.prompt != null ? normalizeText(String(rawStep.prompt)) : '';
-    const responseKey = rawStep.responseKey != null ? normalizeText(String(rawStep.responseKey)) : '';
-    if (type === 'wait_for_input') {
-      if (!prompt) {
-        stepErrors.push('prompt is required for wait_for_input steps.');
-      }
-      if (!responseKey) {
-        stepErrors.push('responseKey is required for wait_for_input steps.');
-      }
     }
 
     const content = rawStep.content != null ? String(rawStep.content) : '';
@@ -223,7 +211,6 @@ export function validateWorkflow(raw) {
       stepErrors.push('retries must be a non-negative integer.');
     }
 
-    const approval = rawStep.approval === true;
     const condition = rawStep.condition != null ? normalizeText(String(rawStep.condition)) || null : null;
     const stepName = normalizeText(rawStep.name ?? '') || stepId;
 
@@ -241,13 +228,10 @@ export function validateWorkflow(raw) {
         successChecks,
         timeout,
         retries,
-        approval,
         condition,
         path: stepPath || null,
         content: content || null,
         mode,
-        prompt: prompt || null,
-        responseKey: responseKey || null,
       });
       seenIds.add(stepId);
     }
