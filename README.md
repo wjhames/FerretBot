@@ -6,7 +6,7 @@ FerretBot is a local-first agent runtime. It runs on your machine, talks to a lo
 
 ## What It Is Right Now
 
-- Node.js ESM daemon + terminal TUI client
+- Node.js ESM daemon + terminal CLI client
 - Event-driven core (bus, lifecycle, IPC)
 - Agent loop with tool-call cycle and parser retries
 - Token-budgeted context assembly from workspace prompt layers
@@ -28,7 +28,7 @@ Main subsystems in play:
 
 Data path, simplified:
 
-1. TUI sends `user:input` over IPC.
+1. CLI sends `user:input` over IPC.
 2. IPC emits on the event bus.
 3. Agent loop builds context, calls provider, parses output.
 4. Tool calls (if any) execute through tool registry, then loop continues.
@@ -49,7 +49,7 @@ npm run agent
 In another terminal:
 
 ```bash
-npm run tui
+npm run cli -- message "Hello"
 ```
 
 ## Default Paths
@@ -62,7 +62,8 @@ npm run tui
 
 ## Workflow + Skills Notes
 
-- Workflows live under `workflows/<workflow-id>/workflow.yaml`.
+- Workflows default to `./.ferretbot/workflows/<workflow-id>/workflow.yaml`.
+- Override workflow root with `workflows.rootDir` in `~/.ferretbot/config.json`.
 - Engine supports `agent`, `wait_for_input`, and system file steps.
 - `loadSkills` resolution order: step, then workflow, then global.
 

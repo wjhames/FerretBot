@@ -8,10 +8,10 @@
 npm run agent
 ```
 
-2. In a second terminal, start the TUI client:
+2. In a second terminal, send a CLI message:
 
 ```bash
-npm run tui
+npm run cli -- message "Hello"
 ```
 
 The agent is headless and can run with zero clients connected.
@@ -24,8 +24,8 @@ The agent is headless and can run with zero clients connected.
 
 ## Common Issues
 
-- `Connection error` in TUI:
-  Agent daemon is not running, or socket/port differs from config.
+- `Connection error` in CLI:
+  Agent daemon is not running, or socket/port differs from CLI flags/config.
 
 - Timeout errors:
   Local model generation is slow for the requested output. Lower response size or increase timeout.
@@ -54,3 +54,9 @@ The agent is headless and can run with zero clients connected.
 
 - Event routing:
   IPC forwards workflow events so connected clients can observe run lifecycle and step progression.
+
+## Workflow File Location
+
+- Default root: `./.ferretbot/workflows`
+- Each workflow: `<workflow-id>/workflow.yaml`
+- Override root with `workflows.rootDir` in `~/.ferretbot/config.json`
