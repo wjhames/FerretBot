@@ -80,16 +80,16 @@ Runtime data is still local-only and gitignored:
 
 ## Default Paths
 
-- Config: `~/.ferretbot/config.json`
-- IPC socket: `~/.ferretbot/agent.sock`
-- Sessions: `~/.ferretbot/sessions`
-- Workflow runs: `~/.ferretbot/workflow-runs`
-- Workspace: current working directory (`process.cwd()`) unless `workspace.path` is set
+- Config: `<cwd>/.ferretbot/config.json`
+- IPC socket: `<cwd>/.ferretbot/agent.sock`
+- Sessions: `<cwd>/.ferretbot/sessions`
+- Workflow runs: `<cwd>/.ferretbot/workflow-runs`
+- Workspace root: `<cwd>/.ferretbot` unless `workspace.path` is set
 
 ## Workflow + Skills Notes
 
 - Workflows default to `./.ferretbot/workflows/<workflow-id>/workflow.yaml`.
-- Override workflow root with `workflows.rootDir` in `~/.ferretbot/config.json`.
+- Override workflow root with `workflows.rootDir` in `<cwd>/.ferretbot/config.json`.
 - Engine supports `agent` and system file steps.
 - `loadSkills` resolution order: step, then workflow, then global.
 - This repo currently ships no bundled workflows under `.ferretbot/workflows/`.
