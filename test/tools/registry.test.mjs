@@ -68,7 +68,7 @@ test('registry built-ins register and execute read/write tools', async () => {
     await registry.registerBuiltIns();
 
     const names = registry.list().map((tool) => tool.name).sort();
-    assert.deepEqual(names, ['bash', 'edit', 'patch', 'read', 'write']);
+    assert.deepEqual(names, ['bash', 'edit', 'read', 'write']);
 
     await registry.execute({
       name: 'write',
