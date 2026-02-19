@@ -8,7 +8,6 @@ const MUTATE_HINTS = [
   'remove',
   'delete',
   'rename',
-  'patch',
   'change',
   'create file',
 ];
