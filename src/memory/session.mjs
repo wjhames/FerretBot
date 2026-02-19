@@ -111,15 +111,21 @@ function isConversationEntry(entry) {
   return false;
 }
 
-function parseJsonLines(raw) {
+function parseJsonLines(raw, options = {}) {
+  const onParseError = typeof options.onParseError === 'function' ? options.onParseError : null;
   const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
   const parsed = [];
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     try {
       parsed.push(JSON.parse(line));
-    } catch {
-      // Preserve forward progress when a single JSONL line is malformed.
+    } catch (error) {
+      onParseError?.({
+        lineNumber: index + 1,
+        line,
+        error,
+      });
     }
   }
 
@@ -131,6 +137,7 @@ export class SessionMemory {
   #tokenEstimatorConfig;
   #dirEnsured;
   #conversationSummarizer;
+  #logger;
 
   constructor(options = {}) {
     this.#baseDir = path.resolve(options.baseDir ?? DEFAULT_SESSION_FOLDER);
@@ -142,6 +149,7 @@ export class SessionMemory {
     this.#conversationSummarizer = typeof options.conversationSummarizer === 'function'
       ? options.conversationSummarizer
       : null;
+    this.#logger = options.logger ?? console;
   }
 
   async #ensureDir() {
@@ -259,7 +267,19 @@ export class SessionMemory {
       throw err;
     }
 
-    const parsed = parseJsonLines(raw);
+    const malformed = [];
+    const parsed = parseJsonLines(raw, {
+      onParseError(details) {
+        malformed.push(details);
+      },
+    });
+    if (malformed.length > 0) {
+      this.#logger?.warn?.('Session memory encountered malformed JSONL entries.', {
+        sessionId,
+        filePath,
+        malformedCount: malformed.length,
+      });
+    }
     return parsed.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
   }
 
