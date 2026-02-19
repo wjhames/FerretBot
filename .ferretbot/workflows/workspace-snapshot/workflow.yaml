@@ -30,8 +30,6 @@ steps:
       - facts.md must contain only observed facts.
       - If a command fails, write "unknown" for that field.
       - Write facts.md using the write tool.
-
-      Return exactly: FACTS_OK
     tools:
       - bash
       - read
@@ -39,10 +37,29 @@ steps:
     loadSkills: []
     dependsOn: []
     successChecks:
-      - type: contains
-        text: FACTS_OK
-      - type: not_contains
-        text: FACTS_FAIL
+      - type: file_exists
+        path: facts.md
+      - type: file_contains
+        path: facts.md
+        text: "## Facts"
+      - type: file_contains
+        path: facts.md
+        text: "### Branch"
+      - type: file_contains
+        path: facts.md
+        text: "### Git Status"
+      - type: file_contains
+        path: facts.md
+        text: "### Top-Level Layout"
+      - type: file_contains
+        path: facts.md
+        text: "### Test File Sample"
+      - type: file_contains
+        path: facts.md
+        text: "### Scripts"
+      - type: file_contains
+        path: facts.md
+        text: "### Gitignore Node Modules Rule"
     retries: 2
 
   - id: write-status
@@ -65,7 +82,6 @@ steps:
       - Keep concise and factual.
 
       Write STATUS.md using the write tool.
-      Return exactly: STATUS_WRITTEN
     tools:
       - read
       - write
@@ -73,10 +89,23 @@ steps:
     dependsOn:
       - collect-facts
     successChecks:
-      - type: contains
-        text: STATUS_WRITTEN
-      - type: not_contains
-        text: STATUS_FAIL
+      - type: file_exists
+        path: STATUS.md
+      - type: file_contains
+        path: STATUS.md
+        text: "## Project Snapshot"
+      - type: file_contains
+        path: STATUS.md
+        text: "### Branch & Status"
+      - type: file_contains
+        path: STATUS.md
+        text: "### Top-Level Layout"
+      - type: file_contains
+        path: STATUS.md
+        text: "### Scripts"
+      - type: file_contains
+        path: STATUS.md
+        text: "### Risks / Notes"
     retries: 2
 
   - id: verify-status
