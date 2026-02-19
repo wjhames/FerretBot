@@ -58,8 +58,17 @@ export async function runAgentTurn(options = {}) {
     queueEmit,
     executeToolCall,
     createWriteRollback = createTurnWriteRollback,
+    signal = null,
   } = options;
 
+  const throwIfAborted = () => {
+    if (!signal?.aborted) {
+      return;
+    }
+    throw signal.reason ?? new Error('Agent turn aborted.');
+  };
+
+  throwIfAborted();
   const initial = await buildInitialContext(event);
   const state = {
     messages: initial.messages,
@@ -76,11 +85,13 @@ export async function runAgentTurn(options = {}) {
   await persistInputTurn(event);
 
   while (true) {
+    throwIfAborted();
     const completion = await provider.chatCompletion({
       messages: state.messages,
       maxTokens: state.maxOutputTokens,
       tools: getToolDefinitionsForEvent(event),
       toolChoice: 'auto',
+      signal,
     });
 
     const nativeToolCall = toToolCallFromNative(completion);

@@ -288,6 +288,59 @@ test('loop propagates requestId to message responses', async () => {
   assert.equal(responseEvent.content.requestId, 'req-123');
 });
 
+test('loop times out long-running turns and emits one terminal error', async () => {
+  const bus = createEventBus();
+  const emitted = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  const loop = createAgentLoop({
+    bus,
+    provider: {
+      async chatCompletion() {
+        return new Promise(() => {});
+      },
+    },
+    parser: {
+      parse(text) {
+        return { kind: 'final', text };
+      },
+    },
+    turnTimeoutMs: 30,
+    logger: {
+      error() {},
+      warn() {},
+    },
+  });
+
+  loop.start();
+  await bus.emit({
+    type: 'user:input',
+    channel: 'tui',
+    sessionId: 's-timeout',
+    content: {
+      text: 'hang',
+      requestId: 'req-timeout',
+    },
+  });
+
+  await waitFor(() =>
+    emitted.some((event) =>
+      event.type === 'agent:response' && event.content.finishReason === 'internal_error'),
+  );
+  loop.stop();
+
+  const terminalResponses = emitted.filter(
+    (event) =>
+      event.type === 'agent:response'
+      && event.content.requestId === 'req-timeout',
+  );
+  assert.equal(terminalResponses.length, 1);
+  assert.match(terminalResponses[0].content.text, /timed out/i);
+});
+
 test('loop continues generation when model hits token limit', async () => {
   const bus = createEventBus();
   const emitted = [];

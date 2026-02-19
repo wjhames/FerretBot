@@ -15,6 +15,7 @@ import { runAgentTurn } from '../turn/runner.mjs';
 
 const DEFAULT_RETRY_LIMIT = 2;
 const DEFAULT_MAX_CONTINUATIONS = 3;
+const DEFAULT_TURN_TIMEOUT_MS = 180_000;
 
 function getRequestIdFromEvent(event) {
   const requestId = event?.content?.requestId;
@@ -23,6 +24,10 @@ function getRequestIdFromEvent(event) {
   }
 
   return requestId.trim();
+}
+
+function isRequestScopedEvent(event) {
+  return event?.type === 'user:input' && Boolean(getRequestIdFromEvent(event));
 }
 
 function coerceInputText(event) {
@@ -81,6 +86,7 @@ export class AgentLoop {
   #pendingEmits;
   #contextLoader;
   #logger;
+  #turnTimeoutMs;
 
   constructor(options = {}) {
     const {
@@ -103,6 +109,7 @@ export class AgentLoop {
       retryLimit = DEFAULT_RETRY_LIMIT,
       buildMessages,
       logger = console,
+      turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS,
     } = options;
 
     if (
@@ -166,6 +173,9 @@ export class AgentLoop {
     this.#unsubscribe = null;
     this.#pendingEmits = new Set();
     this.#logger = logger;
+    this.#turnTimeoutMs = Number.isInteger(turnTimeoutMs) && turnTimeoutMs > 0
+      ? turnTimeoutMs
+      : DEFAULT_TURN_TIMEOUT_MS;
 
     this.#contextManager = this.#createContextManager({
       contextManager,
@@ -306,7 +316,54 @@ export class AgentLoop {
   }
 
   async #handleEvent(event) {
-    await runAgentTurn({
+    const requestId = getRequestIdFromEvent(event);
+    const requestScoped = isRequestScopedEvent(event);
+    let terminalSent = false;
+    const abortController = new AbortController();
+
+    const queueEmit = (payload) => {
+      if (!requestScoped) {
+        this.#queueEmit(payload);
+        return;
+      }
+
+      const payloadRequestId = payload?.content?.requestId;
+      if (payloadRequestId && payloadRequestId !== requestId) {
+        this.#queueEmit(payload);
+        return;
+      }
+
+      const isTerminal = payload?.type === 'agent:response';
+      if (terminalSent) {
+        return;
+      }
+      if (isTerminal) {
+        terminalSent = true;
+      }
+      this.#queueEmit(payload);
+    };
+
+    const emitFinal = async (targetEvent, completion, text, metadata) => {
+      if (requestScoped && terminalSent) {
+        return;
+      }
+      await this.#emitFinal(targetEvent, completion, text, metadata);
+      if (requestScoped) {
+        terminalSent = true;
+      }
+    };
+
+    const emitCorrectionFailure = (targetEvent, text) => {
+      if (requestScoped && terminalSent) {
+        return;
+      }
+      this.#emitCorrectionFailure(targetEvent, text);
+      if (requestScoped) {
+        terminalSent = true;
+      }
+    };
+
+    const turnPromise = runAgentTurn({
       event,
       provider: this.#provider,
       parser: this.#parser,
@@ -316,24 +373,36 @@ export class AgentLoop {
       getToolDefinitionsForEvent: (targetEvent) => this.#contextLoader.getToolDefinitionsForEvent(targetEvent),
       buildInitialContext: (targetEvent) => this.#contextLoader.buildInitialContext(targetEvent),
       persistInputTurn: (targetEvent) => this.#persistInputTurn(targetEvent),
-      emitFinal: (targetEvent, completion, text, metadata) => this.#emitFinal(
-        targetEvent,
-        completion,
-        text,
-        metadata,
-      ),
-      emitCorrectionFailure: (targetEvent, text) => this.#emitCorrectionFailure(targetEvent, text),
-      queueEmit: (payload) => this.#queueEmit(payload),
+      emitFinal,
+      emitCorrectionFailure,
+      queueEmit,
       executeToolCall: (payload) => executeToolCall({
         ...payload,
         retryLimit: this.#retryLimit,
         maxToolCallsPerStep: this.#maxToolCallsPerStep,
         toolRegistry: this.#toolRegistry,
-        queueEmit: (queued) => this.#queueEmit(queued),
+        queueEmit,
         appendSessionTurn: (sessionId, entry) => this.#appendSessionTurn(sessionId, entry),
-        emitCorrectionFailure: (targetEvent, text) => this.#emitCorrectionFailure(targetEvent, text),
+        emitCorrectionFailure,
       }),
+      signal: abortController.signal,
     });
+
+    const timeoutPromise = new Promise((_, reject) => {
+      const timer = setTimeout(() => {
+        const error = new Error(`Agent turn timed out after ${this.#turnTimeoutMs}ms.`);
+        error.code = 'TURN_TIMEOUT';
+        abortController.abort(error);
+        reject(error);
+      }, this.#turnTimeoutMs);
+
+      turnPromise.then(
+        () => clearTimeout(timer),
+        () => clearTimeout(timer),
+      );
+    });
+
+    await Promise.race([turnPromise, timeoutPromise]);
   }
 
   async #compactMessagesForContinuation(options = {}) {
