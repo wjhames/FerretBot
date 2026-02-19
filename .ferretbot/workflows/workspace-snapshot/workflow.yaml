@@ -34,7 +34,7 @@ steps:
     type: agent
     instruction: |
       Run `git branch --show-current` and write only the observed value (or `unknown` if it fails)
-      to `.tmp/workflow-artifacts/repo/branch.txt`.
+      to `.ferretbot/.tmp/workflow-artifacts/repo/branch.txt`.
     tools:
       - bash
       - write
@@ -57,7 +57,7 @@ steps:
     type: agent
     instruction: |
       Run `git status --short` and write only the observed output (or `unknown` if it fails)
-      to `.tmp/workflow-artifacts/repo/git-status.txt`.
+      to `.ferretbot/.tmp/workflow-artifacts/repo/git-status.txt`.
     tools:
       - bash
       - write
@@ -77,7 +77,7 @@ steps:
     type: agent
     instruction: |
       Run `ls -1` and write only the observed output (or `unknown` if it fails)
-      to `.tmp/workflow-artifacts/repo/top-level-layout.txt`.
+      to `.ferretbot/.tmp/workflow-artifacts/repo/top-level-layout.txt`.
     tools:
       - bash
       - write
@@ -100,7 +100,7 @@ steps:
     type: agent
     instruction: |
       Run `ls -1 .ferretbot/workflows` and write only the observed output (or `unknown` if it fails)
-      to `.tmp/workflow-artifacts/repo/workflow-inventory.txt`.
+      to `.ferretbot/.tmp/workflow-artifacts/repo/workflow-inventory.txt`.
     tools:
       - bash
       - write
@@ -123,12 +123,12 @@ steps:
     type: agent
     instruction: |
       Read these files:
-      - `.tmp/workflow-artifacts/repo/branch.txt`
-      - `.tmp/workflow-artifacts/repo/git-status.txt`
-      - `.tmp/workflow-artifacts/repo/top-level-layout.txt`
-      - `.tmp/workflow-artifacts/repo/workflow-inventory.txt`
+      - `.ferretbot/.tmp/workflow-artifacts/repo/branch.txt`
+      - `.ferretbot/.tmp/workflow-artifacts/repo/git-status.txt`
+      - `.ferretbot/.tmp/workflow-artifacts/repo/top-level-layout.txt`
+      - `.ferretbot/.tmp/workflow-artifacts/repo/workflow-inventory.txt`
 
-      Write `.tmp/workflow-artifacts/repo-state.md` with exact headings:
+      Write `.ferretbot/.tmp/workflow-artifacts/repo-state.md` with exact headings:
       - ## Repo State
       - ### Branch
       - ### Git Status
@@ -166,7 +166,7 @@ steps:
     name: Capture Test Signal
     type: agent
     instruction: |
-      Run `npm test` once and write `.tmp/workflow-artifacts/test-signal.md`.
+      Run `npm test` once and write `.ferretbot/.tmp/workflow-artifacts/test-signal.md`.
 
       Required headings:
       - ## Test Signal
@@ -202,7 +202,7 @@ steps:
     name: Capture Package Signal
     type: agent
     instruction: |
-      Read `package.json` and write `.tmp/workflow-artifacts/package-signal.md`.
+      Read `package.json` and write `.ferretbot/.tmp/workflow-artifacts/package-signal.md`.
 
       Required headings:
       - ## Package Signal
@@ -238,10 +238,10 @@ steps:
     type: agent
     instruction: |
       Read:
-      - `.tmp/workflow-artifacts/repo-state.md`
-      - `.tmp/workflow-artifacts/test-signal.md`
-      - `.tmp/workflow-artifacts/package-signal.md`
-      - `.tmp/workflow-artifacts/context.md`
+      - `.ferretbot/.tmp/workflow-artifacts/repo-state.md`
+      - `.ferretbot/.tmp/workflow-artifacts/test-signal.md`
+      - `.ferretbot/.tmp/workflow-artifacts/package-signal.md`
+      - `.ferretbot/.tmp/workflow-artifacts/context.md`
 
       Write `ACTION_PLAN.md` at repository root.
 
@@ -287,7 +287,7 @@ steps:
     name: Verify Plan
     type: agent
     instruction: |
-      Verify `ACTION_PLAN.md` against all workflow artifacts and write `.tmp/workflow-artifacts/verification.txt`.
+      Verify `ACTION_PLAN.md` against all workflow artifacts and write `.ferretbot/.tmp/workflow-artifacts/verification.txt`.
 
       Write exactly one line:
       - VERIFY_OK
