@@ -74,7 +74,9 @@ function makeWorkflow(overrides = {}) {
         tools: ['bash'],
         loadSkills: [],
         dependsOn: [],
-        successChecks: [],
+        outputs: ['step-1.txt'],
+        doneWhen: [{ type: 'non_empty' }],
+        onFail: 'fail_run',
         retries: 0,
       },
     ],
@@ -124,8 +126,8 @@ test('completing a step advances to next and completes the run', async () => {
     const bus = new FakeBus();
     const wf = makeWorkflow({
       steps: [
-        { id: 's1', name: 's1', instruction: 'first', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], retries: 0 },
-        { id: 's2', name: 's2', instruction: 'second', tools: ['read'], loadSkills: [], dependsOn: ['s1'], successChecks: [], retries: 0 },
+        { id: 's1', name: 's1', instruction: 'first', tools: ['bash'], loadSkills: [], dependsOn: [], outputs: ['s1.txt'], doneWhen: [{ type: 'non_empty' }], onFail: 'fail_run', retries: 0 },
+        { id: 's2', name: 's2', instruction: 'second', tools: ['read'], loadSkills: [], dependsOn: ['s1'], outputs: ['s2.txt'], doneWhen: [{ type: 'non_empty' }], onFail: 'fail_run', retries: 0 },
       ],
     });
     const registry = makeRegistry([wf]);
@@ -166,8 +168,8 @@ test('dependency ordering prevents step from starting before deps complete', asy
     const bus = new FakeBus();
     const wf = makeWorkflow({
       steps: [
-        { id: 'a', name: 'a', instruction: 'do a', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], retries: 0 },
-        { id: 'b', name: 'b', instruction: 'do b', tools: ['bash'], loadSkills: [], dependsOn: ['a'], successChecks: [], retries: 0 },
+        { id: 'a', name: 'a', instruction: 'do a', tools: ['bash'], loadSkills: [], dependsOn: [], outputs: ['a.txt'], doneWhen: [{ type: 'non_empty' }], onFail: 'fail_run', retries: 0 },
+        { id: 'b', name: 'b', instruction: 'do b', tools: ['bash'], loadSkills: [], dependsOn: ['a'], outputs: ['b.txt'], doneWhen: [{ type: 'non_empty' }], onFail: 'fail_run', retries: 0 },
       ],
     });
     const registry = makeRegistry([wf]);
@@ -184,7 +186,7 @@ test('dependency ordering prevents step from starting before deps complete', asy
   });
 });
 
-test('successChecks failure retries up to limit then fails the run', async () => {
+test('doneWhen failure retries up to limit then fails the run', async () => {
   await withTempDir(async (storageDir) => {
     const bus = new FakeBus();
     const wf = makeWorkflow({
@@ -192,7 +194,9 @@ test('successChecks failure retries up to limit then fails the run', async () =>
         {
           id: 's1', name: 's1', instruction: 'do it', tools: ['bash'],
           loadSkills: [], dependsOn: [],
-          successChecks: [{ type: 'contains', text: 'SUCCESS' }],
+          outputs: ['s1.txt'],
+          doneWhen: [{ type: 'contains', text: 'SUCCESS' }],
+          onFail: 'fail_run',
           retries: 1,
         },
       ],
@@ -227,7 +231,7 @@ test('successChecks failure retries up to limit then fails the run', async () =>
   });
 });
 
-test('successChecks pass after retry', async () => {
+test('doneWhen pass after retry', async () => {
   await withTempDir(async (storageDir) => {
     const bus = new FakeBus();
     const wf = makeWorkflow({
@@ -235,7 +239,9 @@ test('successChecks pass after retry', async () => {
         {
           id: 's1', name: 's1', instruction: 'do it', tools: ['bash'],
           loadSkills: [], dependsOn: [],
-          successChecks: [{ type: 'contains', text: 'SUCCESS' }],
+          outputs: ['s1.txt'],
+          doneWhen: [{ type: 'contains', text: 'SUCCESS' }],
+          onFail: 'fail_run',
           retries: 1,
         },
       ],
@@ -275,7 +281,9 @@ test('repeated identical failed output blocks the run as no_progress', async () 
           tools: ['bash'],
           loadSkills: [],
           dependsOn: [],
-          successChecks: [{ type: 'contains', text: 'SUCCESS' }],
+          outputs: ['s1.txt'],
+          doneWhen: [{ type: 'contains', text: 'SUCCESS' }],
+          onFail: 'blocked',
           retries: 3,
         },
       ],
@@ -316,7 +324,9 @@ test('step completion payload supports resultText/toolResults and drives checks'
           tools: ['bash'],
           loadSkills: [],
           dependsOn: [],
-          successChecks: [{ type: 'exit_code', expected: 0 }],
+          outputs: ['test-report.txt'],
+          doneWhen: [{ type: 'exit_code', expected: 0 }],
+          onFail: 'fail_run',
           retries: 0,
         },
       ],
@@ -434,7 +444,9 @@ test('system workflow steps execute without agent loop and complete run', async 
           tools: [],
           loadSkills: [],
           dependsOn: [],
-          successChecks: [],
+          outputs: ['out.txt'],
+          doneWhen: [{ type: 'file_exists', path: 'out.txt' }],
+          onFail: 'fail_run',
           retries: 0,
         },
         {
@@ -447,7 +459,9 @@ test('system workflow steps execute without agent loop and complete run', async 
           tools: [],
           loadSkills: [],
           dependsOn: ['write'],
-          successChecks: [],
+          outputs: [],
+          doneWhen: [{ type: 'file_not_exists', path: 'out.txt' }],
+          onFail: 'fail_run',
           retries: 0,
         },
       ],
@@ -466,5 +480,56 @@ test('system workflow steps execute without agent loop and complete run', async 
     assert.ok(bus.eventsOfType('workflow:run:complete').some((event) => event.content?.state === 'completed'));
 
     engine.stop();
+  });
+});
+
+test('lintWorkflow reports contract and check issues', async () => {
+  await withTempDir(async (storageDir) => {
+    const bus = new FakeBus();
+    const wf = makeWorkflow({
+      id: 'lint-wf',
+      steps: [
+        {
+          id: 's1',
+          name: 's1',
+          instruction: 'do it',
+          tools: ['bash'],
+          loadSkills: [],
+          dependsOn: [],
+          outputs: ['out.txt'],
+          doneWhen: [{ type: 'unknown_check' }],
+          onFail: 'fail_run',
+          retries: 0,
+        },
+      ],
+    });
+    const registry = makeRegistry([wf]);
+    const engine = createWorkflowEngine({ bus, registry, storageDir });
+    const report = engine.lintWorkflow('lint-wf');
+
+    assert.equal(report.ok, false);
+    assert.ok(report.errors.some((entry) => entry.includes('unknown check type')));
+  });
+});
+
+test('dryRun returns deterministic execution plan', async () => {
+  await withTempDir(async (storageDir) => {
+    const bus = new FakeBus();
+    const wf = makeWorkflow({
+      id: 'plan-wf',
+      steps: [
+        { id: 's1', name: 's1', instruction: 'first', tools: ['bash'], loadSkills: [], dependsOn: [], outputs: ['s1.txt'], doneWhen: [{ type: 'non_empty' }], onFail: 'fail_run', retries: 0 },
+        { id: 's2', name: 's2', instruction: 'second', tools: ['read'], loadSkills: [], dependsOn: ['s1'], outputs: ['s2.txt'], doneWhen: [{ type: 'non_empty' }], onFail: 'fail_run', retries: 1 },
+      ],
+    });
+    const registry = makeRegistry([wf]);
+    const engine = createWorkflowEngine({ bus, registry, storageDir });
+    const report = engine.dryRun('plan-wf', { target: 'docs' });
+
+    assert.equal(report.ok, true);
+    assert.equal(report.plan.length, 2);
+    assert.equal(report.plan[1].id, 's2');
+    assert.deepEqual(report.plan[1].dependsOn, ['s1']);
+    assert.equal(report.plan[1].doneWhenCount, 1);
   });
 });

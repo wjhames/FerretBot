@@ -1,5 +1,5 @@
 id: workspace-snapshot
-version: "3.0.0"
+version: "4.0.0"
 name: Workspace Snapshot
 description: Collect facts, write STATUS.md, and verify accuracy with explicit step contracts.
 steps:
@@ -36,7 +36,9 @@ steps:
       - write
     loadSkills: []
     dependsOn: []
-    successChecks:
+    outputs:
+      - facts.md
+    doneWhen:
       - type: file_exists
         path: facts.md
       - type: file_contains
@@ -60,6 +62,7 @@ steps:
       - type: file_contains
         path: facts.md
         text: "### Gitignore Node Modules Rule"
+    onFail: fail_run
     retries: 2
 
   - id: write-status
@@ -88,7 +91,9 @@ steps:
     loadSkills: []
     dependsOn:
       - collect-facts
-    successChecks:
+    outputs:
+      - STATUS.md
+    doneWhen:
       - type: file_exists
         path: STATUS.md
       - type: file_contains
@@ -106,6 +111,7 @@ steps:
       - type: file_contains
         path: STATUS.md
         text: "### Risks / Notes"
+    onFail: fail_run
     retries: 2
 
   - id: verify-status
@@ -122,18 +128,23 @@ steps:
       - STATUS.md does not claim no tests if facts.md test sample contains entries.
       - STATUS.md does not suggest adding node_modules to .gitignore if facts.md says node_modules/ is present.
 
-      Return exactly one line:
+      Write one line to verification.txt at repository root:
       - VERIFY_OK
       OR
       - VERIFY_FAIL: <reason>
     tools:
       - read
+      - write
     loadSkills: []
     dependsOn:
       - write-status
-    successChecks:
-      - type: contains
+    outputs:
+      - verification.txt
+    doneWhen:
+      - type: file_exists
+        path: verification.txt
+      - type: file_contains
+        path: verification.txt
         text: VERIFY_OK
-      - type: not_contains
-        text: VERIFY_FAIL
+    onFail: fail_run
     retries: 0

@@ -22,6 +22,11 @@ steps:
     instruction: Do something
     tools:
       - bash
+    outputs:
+      - step-1.txt
+    doneWhen:
+      - type: non_empty
+    onFail: fail_run
 `;
 
 test('loads a valid workflow.yaml from a directory', async () => {
@@ -58,7 +63,7 @@ test('throws when schema validation fails', async () => {
   await withTempDir(async (dir) => {
     await fs.writeFile(
       path.join(dir, 'workflow.yaml'),
-      'id: BAD_ID\nversion: "1"\nsteps:\n  - id: a\n    instruction: do it\n    tools: [bash]\n',
+      'id: BAD_ID\nversion: "1"\nsteps:\n  - id: a\n    instruction: do it\n    tools: [bash]\n    outputs: [a.txt]\n    doneWhen:\n      - type: non_empty\n',
     );
     await assert.rejects(
       loadWorkflow(dir),

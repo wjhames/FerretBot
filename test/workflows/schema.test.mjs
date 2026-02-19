@@ -11,6 +11,9 @@ function minimalWorkflow(overrides = {}) {
         id: 'step-1',
         instruction: 'Do something',
         tools: ['bash'],
+        outputs: ['step-1.txt'],
+        doneWhen: [{ type: 'non_empty' }],
+        onFail: 'fail_run',
       },
     ],
     ...overrides,
@@ -43,7 +46,9 @@ test('validates a workflow with all optional fields', () => {
         tools: ['bash'],
         loadSkills: ['build.skill.md'],
         dependsOn: [],
-        successChecks: [{ type: 'exit_code', expected: 0 }],
+        outputs: ['build.log'],
+        doneWhen: [{ type: 'exit_code', expected: 0 }],
+        onFail: 'blocked',
         retries: 2,
       },
     ],
@@ -57,7 +62,9 @@ test('validates a workflow with all optional fields', () => {
   assert.equal(step.name, 'Build Project');
   assert.equal(step.retries, 2);
   assert.equal(step.loadSkills.length, 1);
-  assert.equal(step.successChecks.length, 1);
+  assert.equal(step.doneWhen.length, 1);
+  assert.deepEqual(step.outputs, ['build.log']);
+  assert.equal(step.onFail, 'blocked');
 });
 
 test('rejects non-object input', () => {
@@ -93,8 +100,8 @@ test('requires non-empty steps', () => {
 test('detects duplicate step ids', () => {
   const result = validateWorkflow(minimalWorkflow({
     steps: [
-      { id: 'a', instruction: 'first', tools: ['bash'] },
-      { id: 'a', instruction: 'second', tools: ['bash'] },
+      { id: 'a', instruction: 'first', tools: ['bash'], outputs: ['a.txt'], doneWhen: [{ type: 'non_empty' }] },
+      { id: 'a', instruction: 'second', tools: ['bash'], outputs: ['x'], doneWhen: [{ type: 'non_empty' }] },
     ],
   }));
   assert.equal(result.valid, false);
@@ -104,8 +111,8 @@ test('detects duplicate step ids', () => {
 test('detects cyclic dependencies', () => {
   const result = validateWorkflow(minimalWorkflow({
     steps: [
-      { id: 'a', instruction: 'first', tools: ['bash'], dependsOn: ['b'] },
-      { id: 'b', instruction: 'second', tools: ['bash'], dependsOn: ['a'] },
+      { id: 'a', instruction: 'first', tools: ['bash'], outputs: ['a.txt'], doneWhen: [{ type: 'non_empty' }], dependsOn: ['b'] },
+      { id: 'b', instruction: 'second', tools: ['bash'], outputs: ['b.txt'], doneWhen: [{ type: 'non_empty' }], dependsOn: ['a'] },
     ],
   }));
   assert.equal(result.valid, false);
@@ -115,7 +122,7 @@ test('detects cyclic dependencies', () => {
 test('detects unknown dependency references', () => {
   const result = validateWorkflow(minimalWorkflow({
     steps: [
-      { id: 'a', instruction: 'first', tools: ['bash'], dependsOn: ['nonexistent'] },
+      { id: 'a', instruction: 'first', tools: ['bash'], outputs: ['a.txt'], doneWhen: [{ type: 'non_empty' }], dependsOn: ['nonexistent'] },
     ],
   }));
   assert.equal(result.valid, false);
@@ -130,7 +137,7 @@ test('rejects unknown top-level fields', () => {
 
 test('rejects unknown step-level fields', () => {
   const result = validateWorkflow(minimalWorkflow({
-    steps: [{ id: 'a', instruction: 'do it', tools: ['bash'], foo: 'bar' }],
+    steps: [{ id: 'a', instruction: 'do it', tools: ['bash'], outputs: ['a.txt'], doneWhen: [{ type: 'non_empty' }], foo: 'bar' }],
   }));
   assert.equal(result.valid, false);
   assert.ok(result.errors.some((e) => e.includes("unknown field 'foo'")));
@@ -144,9 +151,18 @@ test('requires tools per step', () => {
   assert.ok(result.errors.some((e) => e.includes('tools must be a non-empty array')));
 });
 
+test('requires outputs and doneWhen contracts per step', () => {
+  const result = validateWorkflow(minimalWorkflow({
+    steps: [{ id: 'a', instruction: 'do it', tools: ['bash'] }],
+  }));
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.includes('outputs must be a non-empty array')));
+  assert.ok(result.errors.some((e) => e.includes('doneWhen must be a non-empty array')));
+});
+
 test('allows system_write_file step without tools and validates path/content', () => {
   const result = validateWorkflow(minimalWorkflow({
-    steps: [{ id: 'a', type: 'system_write_file', path: 'x.txt', content: 'hello' }],
+    steps: [{ id: 'a', type: 'system_write_file', path: 'x.txt', content: 'hello', outputs: ['x.txt'], doneWhen: [{ type: 'file_exists', path: 'x.txt' }] }],
   }));
   assert.equal(result.valid, true);
   assert.equal(result.workflow.steps[0].type, 'system_write_file');
@@ -167,6 +183,14 @@ test('rejects invalid system step definitions', () => {
   assert.ok(missingContent.errors.some((e) => e.includes('content is required for system_write_file')));
 });
 
+test('rejects outputs for system_delete_file', () => {
+  const result = validateWorkflow(minimalWorkflow({
+    steps: [{ id: 'a', type: 'system_delete_file', path: 'x.txt', outputs: ['x.txt'], doneWhen: [{ type: 'not_contains', text: 'x' }] }],
+  }));
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.includes('outputs must be empty for system_delete_file')));
+});
+
 test('rejects deprecated wait_for_input step type', () => {
   const result = validateWorkflow(minimalWorkflow({
     steps: [{ id: 'ask', type: 'wait_for_input' }],
@@ -177,7 +201,7 @@ test('rejects deprecated wait_for_input step type', () => {
 
 test('rejects deprecated approval field', () => {
   const result = validateWorkflow(minimalWorkflow({
-    steps: [{ id: 'a', instruction: 'do it', tools: ['bash'], approval: true }],
+    steps: [{ id: 'a', instruction: 'do it', tools: ['bash'], outputs: ['a.txt'], doneWhen: [{ type: 'non_empty' }], approval: true }],
   }));
   assert.equal(result.valid, false);
   assert.ok(result.errors.some((e) => e.includes("unknown field 'approval'")));
@@ -191,9 +215,9 @@ test('requires step instruction', () => {
   assert.ok(result.errors.some((e) => e.includes('instruction is required')));
 });
 
-test('validates successChecks require type field', () => {
+test('validates doneWhen require type field', () => {
   const result = validateWorkflow(minimalWorkflow({
-    steps: [{ id: 'a', instruction: 'do it', tools: ['bash'], successChecks: [{}] }],
+    steps: [{ id: 'a', instruction: 'do it', tools: ['bash'], outputs: ['a.txt'], doneWhen: [{}] }],
   }));
   assert.equal(result.valid, false);
   assert.ok(result.errors.some((e) => e.includes('must have a type field')));
@@ -208,9 +232,9 @@ test('defaults name to id when not provided', () => {
 test('accepts valid dependency chain', () => {
   const result = validateWorkflow(minimalWorkflow({
     steps: [
-      { id: 'a', instruction: 'first', tools: ['bash'] },
-      { id: 'b', instruction: 'second', tools: ['read'], dependsOn: ['a'] },
-      { id: 'c', instruction: 'third', tools: ['write'], dependsOn: ['a', 'b'] },
+      { id: 'a', instruction: 'first', tools: ['bash'], outputs: ['a.txt'], doneWhen: [{ type: 'non_empty' }] },
+      { id: 'b', instruction: 'second', tools: ['read'], outputs: ['b.txt'], doneWhen: [{ type: 'non_empty' }], dependsOn: ['a'] },
+      { id: 'c', instruction: 'third', tools: ['write'], outputs: ['c.txt'], doneWhen: [{ type: 'non_empty' }], dependsOn: ['a', 'b'] },
     ],
   }));
   assert.equal(result.valid, true);

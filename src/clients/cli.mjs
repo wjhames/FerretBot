@@ -37,6 +37,8 @@ function printUsage(stream) {
       '  ferretbot-cli workflow run <workflow-id> [--version <semver>] [--arg key=value]...',
       '  ferretbot-cli workflow cancel <run-id>',
       '  ferretbot-cli workflow list',
+      '  ferretbot-cli workflow lint [<workflow-id>] [--version <semver>]',
+      '  ferretbot-cli workflow dry-run <workflow-id> [--version <semver>] [--arg key=value]...',
       '',
       'Options:',
       '  --socket <path>   unix socket path',
@@ -153,6 +155,39 @@ export function parseCliArgs(argv = []) {
     };
   }
 
+  if (sub === 'lint') {
+    const parsed = {
+      kind: 'workflow:lint',
+      workflowId: null,
+      version: null,
+    };
+
+    let index = 2;
+    if (index < args.length && !String(args[index]).startsWith('--')) {
+      parsed.workflowId = String(args[index]).trim() || null;
+      index += 1;
+    }
+
+    while (index < args.length) {
+      const token = args[index];
+      if (token === '--version') {
+        if (index + 1 >= args.length) {
+          return { ok: false, error: '--version requires a value.' };
+        }
+        parsed.version = String(args[index + 1]).trim() || null;
+        index += 2;
+        continue;
+      }
+      return { ok: false, error: `unknown workflow lint option '${token}'.` };
+    }
+
+    return {
+      ok: true,
+      global,
+      command: parsed,
+    };
+  }
+
   if (sub === 'cancel') {
     const runId = Number.parseInt(String(args[2] ?? ''), 10);
     if (!Number.isInteger(runId) || runId <= 0) {
@@ -211,6 +246,52 @@ export function parseCliArgs(argv = []) {
     };
   }
 
+  if (sub === 'dry-run') {
+    const workflowId = String(args[2] ?? '').trim();
+    if (!workflowId) {
+      return { ok: false, error: 'workflow dry-run requires workflow-id.' };
+    }
+
+    const parsed = {
+      kind: 'workflow:dry-run',
+      workflowId,
+      version: null,
+      args: {},
+    };
+
+    let index = 3;
+    while (index < args.length) {
+      const token = args[index];
+      if (token === '--version') {
+        if (index + 1 >= args.length) {
+          return { ok: false, error: '--version requires a value.' };
+        }
+        parsed.version = String(args[index + 1]).trim() || null;
+        index += 2;
+        continue;
+      }
+      if (token === '--arg') {
+        if (index + 1 >= args.length) {
+          return { ok: false, error: '--arg requires key=value.' };
+        }
+        const pair = parseKeyValue(args[index + 1]);
+        if (!pair) {
+          return { ok: false, error: `invalid --arg '${args[index + 1]}'. expected key=value.` };
+        }
+        parsed.args[pair.key] = pair.value;
+        index += 2;
+        continue;
+      }
+      return { ok: false, error: `unknown workflow dry-run option '${token}'.` };
+    }
+
+    return {
+      ok: true,
+      global,
+      command: parsed,
+    };
+  }
+
   return { ok: false, error: `unknown workflow command '${String(sub ?? '')}'.` };
 }
 
@@ -258,6 +339,35 @@ export function buildCommandPayload(command, requestId) {
       type: 'workflow:run:list',
       content: { requestId },
     };
+  }
+
+  if (command.kind === 'workflow:lint') {
+    const payload = {
+      type: 'workflow:lint',
+      content: { requestId },
+    };
+    if (command.workflowId) {
+      payload.content.workflowId = command.workflowId;
+    }
+    if (command.version) {
+      payload.content.version = command.version;
+    }
+    return payload;
+  }
+
+  if (command.kind === 'workflow:dry-run') {
+    const payload = {
+      type: 'workflow:dry-run',
+      content: {
+        requestId,
+        workflowId: command.workflowId,
+        args: command.args ?? {},
+      },
+    };
+    if (command.version) {
+      payload.content.version = command.version;
+    }
+    return payload;
   }
 
   throw new Error(`Unsupported command kind '${command.kind}'.`);

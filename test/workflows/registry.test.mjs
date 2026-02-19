@@ -21,7 +21,7 @@ function makeWorkflow(overrides = {}) {
     name: 'Test Flow',
     description: 'A test workflow',
     inputs: [],
-    steps: [{ id: 'step-1', name: 'step-1', instruction: 'Do it', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], retries: 0 }],
+    steps: [{ id: 'step-1', name: 'step-1', instruction: 'Do it', tools: ['bash'], loadSkills: [], dependsOn: [], outputs: ['step-1.txt'], doneWhen: [{ type: 'non_empty' }], onFail: 'fail_run', retries: 0 }],
     ...overrides,
   };
 }
@@ -96,6 +96,11 @@ steps:
     instruction: run it
     tools:
       - bash
+    outputs:
+      - s1.txt
+    doneWhen:
+      - type: non_empty
+    onFail: fail_run
 `;
     await fs.mkdir(path.join(dir, 'disk-flow'));
     await fs.writeFile(path.join(dir, 'disk-flow', 'workflow.yaml'), yamlContent);

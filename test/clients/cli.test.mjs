@@ -32,6 +32,35 @@ test('parseCliArgs parses workflow run args and version', () => {
   assert.deepEqual(parsed.command.args, { ticket: '123', owner: 'alex' });
 });
 
+test('parseCliArgs parses workflow lint and dry-run commands', () => {
+  const lintParsed = parseCliArgs([
+    'workflow',
+    'lint',
+    'demo-flow',
+    '--version',
+    '3.0.0',
+  ]);
+  assert.equal(lintParsed.ok, true);
+  assert.equal(lintParsed.command.kind, 'workflow:lint');
+  assert.equal(lintParsed.command.workflowId, 'demo-flow');
+  assert.equal(lintParsed.command.version, '3.0.0');
+
+  const dryRunParsed = parseCliArgs([
+    'workflow',
+    'dry-run',
+    'demo-flow',
+    '--version',
+    '2.0.0',
+    '--arg',
+    'target=src',
+  ]);
+  assert.equal(dryRunParsed.ok, true);
+  assert.equal(dryRunParsed.command.kind, 'workflow:dry-run');
+  assert.equal(dryRunParsed.command.workflowId, 'demo-flow');
+  assert.equal(dryRunParsed.command.version, '2.0.0');
+  assert.deepEqual(dryRunParsed.command.args, { target: 'src' });
+});
+
 test('runCli sends workflow list command and exits on workflow command result', async () => {
   const stdout = createCaptureStream();
   const stderr = createCaptureStream();

@@ -45,6 +45,8 @@ test('EventBus accepts workflow event types', async () => {
     'workflow:step:start',
     'workflow:step:complete',
     'workflow:run:complete',
+    'workflow:lint',
+    'workflow:dry-run',
   ];
 
   for (const type of workflowEvents) {

@@ -6,7 +6,7 @@ const ALLOWED_WORKFLOW_FIELDS = new Set([
 
 const ALLOWED_STEP_FIELDS = new Set([
   'id', 'name', 'instruction', 'tools', 'loadSkills', 'dependsOn',
-  'successChecks', 'retries',
+  'doneWhen', 'outputs', 'onFail', 'retries',
   'type', 'path', 'content', 'mode',
 ]);
 const ALLOWED_STEP_TYPES = new Set([
@@ -18,6 +18,7 @@ const ALLOWED_STEP_TYPES = new Set([
 
 const ALLOWED_INPUT_FIELDS = new Set(['name', 'type', 'required', 'default']);
 const ALLOWED_INPUT_TYPES = new Set(['string', 'number', 'boolean']);
+const ALLOWED_ON_FAIL = new Set(['fail_run', 'blocked']);
 
 function normalizeText(value) {
   if (typeof value !== 'string') return '';
@@ -194,11 +195,29 @@ export function validateWorkflow(raw) {
       ? rawStep.dependsOn.map((d) => normalizeText(String(d))).filter((d) => d.length > 0)
       : [];
 
-    const successChecks = Array.isArray(rawStep.successChecks) ? rawStep.successChecks : [];
-    for (let j = 0; j < successChecks.length; j++) {
-      if (!successChecks[j] || typeof successChecks[j] !== 'object' || !successChecks[j].type) {
-        stepErrors.push(`successChecks[${j}] must have a type field.`);
+    const outputs = Array.isArray(rawStep.outputs)
+      ? rawStep.outputs.map((entry) => normalizeText(String(entry))).filter((entry) => entry.length > 0)
+      : [];
+    if (type !== 'system_delete_file' && outputs.length === 0) {
+      stepErrors.push('outputs must be a non-empty array for this step type.');
+    }
+    if (type === 'system_delete_file' && outputs.length > 0) {
+      stepErrors.push('outputs must be empty for system_delete_file steps.');
+    }
+
+    const doneWhen = Array.isArray(rawStep.doneWhen) ? rawStep.doneWhen : [];
+    if (doneWhen.length === 0) {
+      stepErrors.push('doneWhen must be a non-empty array.');
+    }
+    for (let j = 0; j < doneWhen.length; j++) {
+      if (!doneWhen[j] || typeof doneWhen[j] !== 'object' || !doneWhen[j].type) {
+        stepErrors.push(`doneWhen[${j}] must have a type field.`);
       }
+    }
+
+    const onFail = normalizeText(String(rawStep.onFail ?? 'fail_run')) || 'fail_run';
+    if (!ALLOWED_ON_FAIL.has(onFail)) {
+      stepErrors.push(`onFail must be one of: ${[...ALLOWED_ON_FAIL].join(', ')}.`);
     }
 
     const retries = rawStep.retries != null ? Number(rawStep.retries) : 0;
@@ -219,7 +238,9 @@ export function validateWorkflow(raw) {
         tools,
         loadSkills,
         dependsOn,
-        successChecks,
+        doneWhen,
+        outputs,
+        onFail,
         retries,
         path: stepPath || null,
         content: content || null,

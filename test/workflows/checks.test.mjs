@@ -118,6 +118,14 @@ test('file_exists check fails for missing file', async () => {
   assert.equal(result.passed, false);
 });
 
+test('file_not_exists check passes for missing file', async () => {
+  const result = await evaluateChecks(
+    [{ type: 'file_not_exists', path: '/tmp/nonexistent-' + Date.now() }],
+    {},
+  );
+  assert.equal(result.passed, true);
+});
+
 test('file_contains check validates file content', async () => {
   await withTempDir(async (dir) => {
     const filePath = path.join(dir, 'status.txt');

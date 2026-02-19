@@ -157,6 +157,52 @@ export function registerWorkflowIpcCommands({ bus, workflowEngine, workflowRegis
     });
   }));
 
+  unsubscribes.push(bus.on('workflow:lint', (event) => {
+    runDetached(async () => {
+      try {
+        const workflowId = toNonEmptyString(event?.content?.workflowId) ?? null;
+        const version = toNonEmptyString(event?.content?.version) ?? undefined;
+        const report = workflowEngine.lintWorkflow(workflowId, version ? { version } : {});
+        await emitCommandResult(bus, event, {
+          ok: report?.ok === true,
+          message: workflowId
+            ? `workflow lint ${workflowId}: ${report?.ok ? 'ok' : 'failed'}.`
+            : `workflow lint: ${report?.ok ? 'ok' : 'failed'}.`,
+          data: report,
+        });
+      } catch (error) {
+        await emitCommandResult(bus, event, {
+          ok: false,
+          message: error?.message ?? String(error),
+        });
+      }
+    });
+  }));
+
+  unsubscribes.push(bus.on('workflow:dry-run', (event) => {
+    runDetached(async () => {
+      try {
+        const workflowId = toNonEmptyString(event?.content?.workflowId);
+        if (!workflowId) {
+          throw new Error('workflowId is required.');
+        }
+        const version = toNonEmptyString(event?.content?.version) ?? undefined;
+        const args = toPlainObject(event?.content?.args);
+        const report = workflowEngine.dryRun(workflowId, args, version ? { version } : {});
+        await emitCommandResult(bus, event, {
+          ok: report?.ok === true,
+          message: `workflow dry-run ${workflowId}: ${report?.ok ? 'ok' : 'failed'}.`,
+          data: report,
+        });
+      } catch (error) {
+        await emitCommandResult(bus, event, {
+          ok: false,
+          message: error?.message ?? String(error),
+        });
+      }
+    });
+  }));
+
   return () => {
     for (const unsubscribe of unsubscribes) {
       if (typeof unsubscribe === 'function') {

@@ -10,6 +10,8 @@ const DEFAULT_ALLOWED_EVENT_TYPES = [
   'workflow:run:start',
   'workflow:run:cancel',
   'workflow:run:list',
+  'workflow:lint',
+  'workflow:dry-run',
 ];
 
 export class EventBus {

@@ -91,6 +91,24 @@ async function fileExistsCheck(check) {
   };
 }
 
+async function fileNotExistsCheck(check) {
+  const filePath = check.path ?? '';
+  let exists = false;
+  try {
+    await fs.access(filePath);
+    exists = true;
+  } catch {
+    exists = false;
+  }
+  return {
+    type: 'file_not_exists',
+    passed: !exists,
+    message: !exists
+      ? `file '${filePath}' does not exist.`
+      : `file '${filePath}' exists.`,
+  };
+}
+
 async function fileContainsCheck(check) {
   const filePath = check.path ?? '';
   const text = String(check.text ?? '');
@@ -185,6 +203,7 @@ registerCheckType('regex', regexCheck);
 registerCheckType('exit_code', exitCodeCheck);
 registerCheckType('command_exit_code', commandExitCodeCheck);
 registerCheckType('file_exists', fileExistsCheck);
+registerCheckType('file_not_exists', fileNotExistsCheck);
 registerCheckType('file_contains', fileContainsCheck);
 registerCheckType('file_regex', fileRegexCheck);
 registerCheckType('file_hash_changed', fileHashChangedCheck);
@@ -212,6 +231,14 @@ export async function evaluateChecks(checks, context = {}) {
 
   const passed = results.every((r) => r.passed);
   return { passed, results };
+}
+
+export function listCheckTypes() {
+  return [...checkHandlers.keys()].sort();
+}
+
+export function hasCheckType(type) {
+  return checkHandlers.has(type);
 }
 
 export { registerCheckType };

@@ -1,6 +1,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { evaluateChecks } from './checks.mjs';
+import { listCheckTypes } from './checks.mjs';
+import { lintWorkflow } from './lint.mjs';
 import { DEFAULT_AGENT_DIR } from '../core/config-defaults.mjs';
 
 const DEFAULT_RUNS_DIR = path.join(DEFAULT_AGENT_DIR, 'workflow-runs');
@@ -171,6 +173,79 @@ export class WorkflowEngine {
     return [...this.#runs.values()];
   }
 
+  lintWorkflow(workflowId, options = {}) {
+    const version = options.version ?? undefined;
+    const workflow = workflowId
+      ? this.#registry.get(workflowId, version)
+      : null;
+    if (workflowId && !workflow) {
+      throw new Error(`workflow '${workflowId}' not found in registry.`);
+    }
+
+    if (workflow) {
+      return lintWorkflow(workflow, {
+        knownCheckTypes: listCheckTypes(),
+      });
+    }
+
+    const listed = typeof this.#registry.list === 'function' ? this.#registry.list() : [];
+    const reports = listed.map((entry) => {
+      const target = this.#registry.get(entry.id, entry.version);
+      if (!target) {
+        return {
+          workflowId: entry.id,
+          ok: false,
+          errors: [`workflow '${entry.id}' version '${entry.version}' missing from registry.`],
+          warnings: [],
+        };
+      }
+      return lintWorkflow(target, {
+        knownCheckTypes: listCheckTypes(),
+      });
+    });
+
+    return {
+      workflowId: null,
+      ok: reports.every((report) => report.ok),
+      reports,
+    };
+  }
+
+  dryRun(workflowId, args = {}, options = {}) {
+    const version = options.version ?? undefined;
+    const workflow = this.#registry.get(workflowId, version);
+    if (!workflow) {
+      throw new Error(`workflow '${workflowId}' not found in registry.`);
+    }
+
+    const unresolved = [];
+    for (const step of workflow.steps) {
+      for (const dep of step.dependsOn ?? []) {
+        if (!workflow.steps.some((candidate) => candidate.id === dep)) {
+          unresolved.push({ stepId: step.id, dependsOn: dep });
+        }
+      }
+    }
+
+    return {
+      ok: unresolved.length === 0,
+      workflowId: workflow.id,
+      workflowVersion: workflow.version,
+      args,
+      unresolvedDependencies: unresolved,
+      plan: workflow.steps.map((step) => ({
+        id: step.id,
+        name: step.name,
+        type: step.type,
+        dependsOn: [...(step.dependsOn ?? [])],
+        outputs: [...(step.outputs ?? [])],
+        doneWhenCount: Array.isArray(step.doneWhen) ? step.doneWhen.length : 0,
+        retries: step.retries ?? 0,
+        onFail: step.onFail ?? 'fail_run',
+      })),
+    };
+  }
+
   async #handleStepComplete(event) {
     const runId = event?.content?.runId;
     const stepId = event?.content?.stepId;
@@ -320,7 +395,7 @@ export class WorkflowEngine {
     emitStepCompleteEvent = false,
   }) {
     runStep.attemptCount += 1;
-    const checks = workflowStep?.successChecks ?? [];
+    const checks = this.#resolveCheckPaths(workflowStep?.doneWhen ?? []);
 
     const normalizedResultText = String(resultText ?? '');
     const checkResult = await evaluateChecks(checks, {
@@ -393,9 +468,9 @@ export class WorkflowEngine {
     await this.#failRun({
       run,
       runStep,
-      state: RUN_STATE.failed,
+      state: workflowStep?.onFail === 'blocked' ? RUN_STATE.blocked : RUN_STATE.failed,
       code: 'check_failed',
-      message: `step '${runStep.id}' failed successChecks.`,
+      message: `step '${runStep.id}' failed doneWhen checks.`,
     });
   }
 
@@ -428,6 +503,28 @@ export class WorkflowEngine {
     return source.replace(/\{\{\s*args\.([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, keyPath) => (
       resolvePathValue(run.args ?? {}, keyPath)
     ));
+  }
+
+  #resolveCheckPaths(checks) {
+    if (!Array.isArray(checks) || checks.length === 0) {
+      return [];
+    }
+    if (!this.#workspaceManager || typeof this.#workspaceManager.resolve !== 'function') {
+      return checks;
+    }
+
+    return checks.map((check) => {
+      if (!check || typeof check !== 'object' || typeof check.path !== 'string' || check.path.length === 0) {
+        return check;
+      }
+      if (path.isAbsolute(check.path)) {
+        return check;
+      }
+      return {
+        ...check,
+        path: this.#workspaceManager.resolve(check.path),
+      };
+    });
   }
 
   #findNextReadyStep(run) {
