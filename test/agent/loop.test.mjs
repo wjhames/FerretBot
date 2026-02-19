@@ -196,6 +196,59 @@ test('loop emits tool-limit response when call cap is exceeded', async () => {
   assert.match(responseEvent.content.text, /Tool call limit reached/);
 });
 
+test('loop emits internal error response when turn handling throws unexpectedly', async () => {
+  const bus = createEventBus();
+  const emitted = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  const loop = createAgentLoop({
+    bus,
+    provider: {
+      async chatCompletion() {
+        throw new Error('provider exploded');
+      },
+    },
+    parser: {
+      parse(text) {
+        return { kind: 'final', text };
+      },
+    },
+    maxTokens: 128,
+    logger: {
+      error() {},
+      warn() {},
+    },
+  });
+
+  loop.start();
+
+  await bus.emit({
+    type: 'user:input',
+    channel: 'tui',
+    sessionId: 's-error',
+    content: { text: 'trigger' },
+  });
+
+  await waitFor(() =>
+    emitted.some((event) =>
+      event.type === 'agent:response' && event.content.finishReason === 'internal_error'),
+  );
+  loop.stop();
+
+  const statusEvent = emitted.find((event) => event.type === 'agent:status' && event.content.phase === 'agent:error');
+  assert.ok(statusEvent);
+  assert.match(statusEvent.content.detail, /provider exploded/);
+
+  const responseEvent = emitted.find(
+    (event) => event.type === 'agent:response' && event.content.finishReason === 'internal_error',
+  );
+  assert.ok(responseEvent);
+  assert.match(responseEvent.content.text, /provider exploded/);
+});
+
 test('loop continues generation when model hits token limit', async () => {
   const bus = createEventBus();
   const emitted = [];

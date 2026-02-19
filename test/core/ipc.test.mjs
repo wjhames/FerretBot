@@ -158,3 +158,37 @@ test('ipc routes targeted responses and broadcasts untargeted events', async () 
   await server.stopAccepting();
   await server.disconnectAllClients();
 });
+
+test('ipc emits inbound processing errors back to the client', async () => {
+  const bus = createEventBus();
+
+  let fakeServer;
+  const server = createIpcServer({
+    bus,
+    port: 0,
+    createServer: (onConnection) => {
+      fakeServer = new FakeServer(onConnection);
+      return fakeServer;
+    },
+  });
+
+  await server.start();
+
+  const socket = new FakeSocket();
+  fakeServer.connect(socket);
+
+  socket.emit('data', Buffer.from(`${JSON.stringify({ type: 'not:supported', content: 'hello' })}\n`, 'utf8'));
+
+  await waitFor(() => parseLines(socket).some(
+    (message) => message.type === 'agent:status' && message.content?.phase === 'ipc:inbound_error',
+  ));
+
+  const errorMessage = parseLines(socket).find(
+    (message) => message.type === 'agent:status' && message.content?.phase === 'ipc:inbound_error',
+  );
+  assert.ok(errorMessage);
+  assert.match(errorMessage.content.detail, /Unsupported event type/);
+
+  await server.stopAccepting();
+  await server.disconnectAllClients();
+});

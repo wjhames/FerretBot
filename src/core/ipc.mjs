@@ -235,6 +235,22 @@ export class IpcServer {
         channel: 'ipc',
         sessionId,
         content: parsed.content ?? null,
+      }).catch((error) => {
+        const client = this.#clients.get(assignedClientId);
+        if (!client) {
+          return;
+        }
+
+        client.socket.write(`${JSON.stringify({
+          type: 'agent:status',
+          content: {
+            phase: 'ipc:inbound_error',
+            text: 'Failed to process inbound IPC message.',
+            detail: error?.message ?? String(error),
+          },
+          clientId: assignedClientId,
+          timestamp: Date.now(),
+        })}\n`);
       });
     }
   }

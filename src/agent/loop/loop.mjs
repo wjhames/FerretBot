@@ -71,6 +71,7 @@ export class AgentLoop {
   #unsubscribe;
   #pendingEmits;
   #contextLoader;
+  #logger;
 
   constructor(options = {}) {
     const {
@@ -92,6 +93,7 @@ export class AgentLoop {
       maxContinuations = DEFAULT_MAX_CONTINUATIONS,
       retryLimit = DEFAULT_RETRY_LIMIT,
       buildMessages,
+      logger = console,
     } = options;
 
     if (
@@ -154,6 +156,7 @@ export class AgentLoop {
     this.#retryLimit = retryLimit;
     this.#unsubscribe = null;
     this.#pendingEmits = new Set();
+    this.#logger = logger;
 
     this.#contextManager = this.#createContextManager({
       contextManager,
@@ -208,7 +211,31 @@ export class AgentLoop {
         return;
       }
 
-      await this.#handleEvent(event);
+      try {
+        await this.#handleEvent(event);
+      } catch (error) {
+        const detail = error?.message ?? String(error);
+        this.#logger?.error?.('Agent turn failed.', error);
+        this.#queueEmit({
+          type: 'agent:status',
+          channel: event.channel,
+          sessionId: event.sessionId,
+          content: {
+            phase: 'agent:error',
+            text: 'Agent turn failed.',
+            detail,
+          },
+        });
+        this.#queueEmit({
+          type: 'agent:response',
+          channel: event.channel,
+          sessionId: event.sessionId,
+          content: {
+            text: `Agent failed to process request: ${detail}`,
+            finishReason: 'internal_error',
+          },
+        });
+      }
     });
   }
 
@@ -389,13 +416,19 @@ export class AgentLoop {
 
     try {
       await this.#sessionMemory.appendTurn(sessionId, entry);
-    } catch {
-      // Session persistence is best-effort and must not block the loop.
+    } catch (error) {
+      this.#logger?.warn?.('Session persistence failed.', error);
     }
   }
 
   #queueEmit(event) {
-    const pending = this.#bus.emit(event).catch(() => {});
+    const pending = this.#bus.emit(event).catch((error) => {
+      this.#logger?.warn?.('Failed to emit event.', {
+        type: event?.type,
+        sessionId: event?.sessionId,
+        error: error?.message ?? String(error),
+      });
+    });
     this.#pendingEmits.add(pending);
     pending.finally(() => {
       this.#pendingEmits.delete(pending);
