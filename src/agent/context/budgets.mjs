@@ -70,6 +70,7 @@ const FIXED_LAYER_NAMES = [
   'memory',
   'bootstrap',
   'prior',
+  'conversation',
 ];
 
 function clamp(value, min, max) {

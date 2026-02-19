@@ -216,11 +216,12 @@ test('layer budgets scale when fixed layers exceed the input budget', () => {
       memory: 400,
       bootstrap: 400,
       prior: 400,
+      conversation: 400,
     },
   });
 
   const budgets = context.getLayerBudgets();
-  const totalFixed = budgets.system
+  const totalScaled = budgets.system
     + budgets.step
     + budgets.skills
     + budgets.identity
@@ -229,10 +230,24 @@ test('layer budgets scale when fixed layers exceed the input budget', () => {
     + budgets.boot
     + budgets.memory
     + budgets.bootstrap
-    + budgets.prior;
-  assert.equal(totalFixed, 1_000);
+    + budgets.prior
+    + budgets.conversation;
+  assert.equal(totalScaled, 1_000);
   assert.ok(budgets.system <= 400);
   assert.ok(budgets.step <= 400);
   assert.ok(budgets.skills <= 400);
   assert.ok(budgets.prior <= 400);
+  assert.ok(budgets.conversation <= 400);
+  assert.ok(budgets.conversation > 0);
+});
+
+test('default derived layer budgets keep meaningful conversation capacity', () => {
+  const context = createAgentContext({
+    contextLimit: 32_000,
+    outputReserve: 2_048,
+  });
+
+  const budgets = context.getLayerBudgets();
+  assert.ok(budgets.conversation >= 1_000);
+  assert.ok(budgets.conversation < 10_000);
 });
