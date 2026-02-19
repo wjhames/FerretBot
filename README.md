@@ -97,6 +97,9 @@ Runtime data is still local-only and gitignored:
 - Workflow step context is step-focused by default: current step, allowed tools, workflow args, prior step results, and requested skills.
 - Built-in success checks include `contains`, `not_contains`, `regex`, `exit_code`, `command_exit_code`, `file_exists`, `file_not_exists`, `file_contains`, `file_regex`, `file_hash_changed`, `non_empty`.
 - Contract-first default: each step should declare `outputs` and file-backed `doneWhen` checks.
+- Agent step completion emits structured payload fields: `resultText`, `toolCalls`, `toolResults`, `artifacts`.
+- Runs can end in `blocked` when `onFail: blocked` is set or when no-progress is detected on repeated failed attempts.
+- Showcase workflow: `.ferretbot/workflows/workspace-snapshot/workflow.yaml` (`v5.0.0`).
 
 ## Current Status
 
