@@ -1,5 +1,4 @@
 const MUTATE_HINTS = [
-  'edit',
   'update',
   'modify',
   'rewrite',
