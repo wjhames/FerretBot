@@ -682,6 +682,81 @@ test('loop handles workflow:step:start, scopes tools, and emits workflow:step:co
   assert.equal(stepComplete.content.result, 'workflow step done');
 });
 
+test('loop parses fenced JSON tool calls from text completions', async () => {
+  const bus = createEventBus();
+  const emitted = [];
+  const toolCalls = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  const provider = createSequencedProvider([
+    {
+      text: [
+        'Use a tool:',
+        '```json',
+        '{"tool":"bash","args":{"command":"pwd"}}',
+        '```',
+      ].join('\n'),
+      finishReason: 'stop',
+    },
+    {
+      text: 'done',
+      finishReason: 'stop',
+    },
+  ]);
+
+  const parser = {
+    parse(text) {
+      const match = text.match(/\{"tool":"bash","args":\{"command":"pwd"\}\}/);
+      if (match) {
+        return {
+          kind: 'tool_call',
+          toolName: 'bash',
+          arguments: { command: 'pwd' },
+        };
+      }
+      return { kind: 'final', text };
+    },
+  };
+
+  const toolRegistry = {
+    list() {
+      return [{ name: 'bash', description: 'run shell', schema: { type: 'object' } }];
+    },
+    validateCall() {
+      return { valid: true, errors: [] };
+    },
+    async execute(call) {
+      toolCalls.push(call);
+      return { stdout: '/workspace' };
+    },
+  };
+
+  const loop = createAgentLoop({
+    bus,
+    provider,
+    parser,
+    toolRegistry,
+    maxTokens: 128,
+  });
+
+  loop.start();
+  await bus.emit({
+    type: 'user:input',
+    channel: 'tui',
+    sessionId: 'fenced-json',
+    content: { text: 'run tool' },
+  });
+
+  await waitFor(() => emitted.some((event) => event.type === 'agent:response'));
+  loop.stop();
+
+  assert.equal(toolCalls.length, 1);
+  assert.equal(toolCalls[0].name, 'bash');
+});
+
 test('workflow step completion includes structured tool call/result payload', async () => {
   const bus = createEventBus();
   const emitted = [];

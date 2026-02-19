@@ -9,7 +9,15 @@ export function shouldAttemptTextToolParse(text, finishReason) {
     return false;
   }
 
-  return text.trimStart().startsWith('{');
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith('{') || trimmed.startsWith('```')) {
+    return true;
+  }
+
+  return (
+    trimmed.includes('{')
+    && /"?(tool|tool_calls|tool_call|name|args|arguments)"?\s*:/.test(trimmed)
+  );
 }
 
 export function buildCorrectionPrompt(reason) {
