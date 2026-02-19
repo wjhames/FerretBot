@@ -1,5 +1,5 @@
 id: workspace-snapshot
-version: "6.0.0"
+version: "6.1.0"
 name: Repo Action Plan
 description: Build an evidence-based, executable action plan from repository signals using small deterministic steps.
 
@@ -29,34 +29,122 @@ steps:
     onFail: fail_run
     retries: 0
 
-  - id: capture-repo-state
-    name: Capture Repo State
+  - id: capture-branch
+    name: Capture Branch
     type: agent
     instruction: |
-      Use tools only and write `.tmp/workflow-artifacts/repo-state.md`.
-
-      Collect:
-      - branch (`git branch --show-current`)
-      - git status (`git status --short`)
-      - top-level files/dirs (`ls -1`)
-      - workflow directories (`ls -1 .ferretbot/workflows`)
-
-      Required headings (exact):
-      - ## Repo State
-      - ### Branch
-      - ### Git Status
-      - ### Top-Level Layout
-      - ### Workflow Inventory
-
-      Rules:
-      - Only observed facts.
-      - If a command fails, write "unknown" for that field.
+      Run `git branch --show-current` and write only the observed value (or `unknown` if it fails)
+      to `.tmp/workflow-artifacts/repo/branch.txt`.
     tools:
       - bash
       - write
     loadSkills: []
     dependsOn:
       - seed-context
+    outputs:
+      - .tmp/workflow-artifacts/repo/branch.txt
+    doneWhen:
+      - type: file_exists
+        path: .tmp/workflow-artifacts/repo/branch.txt
+      - type: file_regex
+        path: .tmp/workflow-artifacts/repo/branch.txt
+        pattern: ".+"
+    onFail: fail_run
+    retries: 1
+
+  - id: capture-git-status
+    name: Capture Git Status
+    type: agent
+    instruction: |
+      Run `git status --short` and write only the observed output (or `unknown` if it fails)
+      to `.tmp/workflow-artifacts/repo/git-status.txt`.
+    tools:
+      - bash
+      - write
+    loadSkills: []
+    dependsOn:
+      - seed-context
+    outputs:
+      - .tmp/workflow-artifacts/repo/git-status.txt
+    doneWhen:
+      - type: file_exists
+        path: .tmp/workflow-artifacts/repo/git-status.txt
+    onFail: fail_run
+    retries: 1
+
+  - id: capture-top-level-layout
+    name: Capture Top-Level Layout
+    type: agent
+    instruction: |
+      Run `ls -1` and write only the observed output (or `unknown` if it fails)
+      to `.tmp/workflow-artifacts/repo/top-level-layout.txt`.
+    tools:
+      - bash
+      - write
+    loadSkills: []
+    dependsOn:
+      - seed-context
+    outputs:
+      - .tmp/workflow-artifacts/repo/top-level-layout.txt
+    doneWhen:
+      - type: file_exists
+        path: .tmp/workflow-artifacts/repo/top-level-layout.txt
+      - type: file_regex
+        path: .tmp/workflow-artifacts/repo/top-level-layout.txt
+        pattern: ".+"
+    onFail: fail_run
+    retries: 1
+
+  - id: capture-workflow-inventory
+    name: Capture Workflow Inventory
+    type: agent
+    instruction: |
+      Run `ls -1 .ferretbot/workflows` and write only the observed output (or `unknown` if it fails)
+      to `.tmp/workflow-artifacts/repo/workflow-inventory.txt`.
+    tools:
+      - bash
+      - write
+    loadSkills: []
+    dependsOn:
+      - seed-context
+    outputs:
+      - .tmp/workflow-artifacts/repo/workflow-inventory.txt
+    doneWhen:
+      - type: file_exists
+        path: .tmp/workflow-artifacts/repo/workflow-inventory.txt
+      - type: file_regex
+        path: .tmp/workflow-artifacts/repo/workflow-inventory.txt
+        pattern: ".+"
+    onFail: fail_run
+    retries: 1
+
+  - id: write-repo-state
+    name: Write Repo State
+    type: agent
+    instruction: |
+      Read these files:
+      - `.tmp/workflow-artifacts/repo/branch.txt`
+      - `.tmp/workflow-artifacts/repo/git-status.txt`
+      - `.tmp/workflow-artifacts/repo/top-level-layout.txt`
+      - `.tmp/workflow-artifacts/repo/workflow-inventory.txt`
+
+      Write `.tmp/workflow-artifacts/repo-state.md` with exact headings:
+      - ## Repo State
+      - ### Branch
+      - ### Git Status
+      - ### Top-Level Layout
+      - ### Workflow Inventory
+
+      Do not run bash here. Only assemble from files above.
+    tools:
+      - read
+      - write
+    loadSkills: []
+    dependsOn:
+      - capture-branch
+      - capture-git-status
+      - capture-top-level-layout
+      - capture-workflow-inventory
     outputs:
       - .tmp/workflow-artifacts/repo-state.md
     doneWhen:
@@ -65,6 +153,9 @@ steps:
       - type: file_contains
         path: .tmp/workflow-artifacts/repo-state.md
         text: "## Repo State"
+      - type: file_contains
+        path: .tmp/workflow-artifacts/repo-state.md
+        text: "### Branch"
       - type: file_contains
         path: .tmp/workflow-artifacts/repo-state.md
         text: "### Git Status"
@@ -92,7 +183,7 @@ steps:
       - write
     loadSkills: []
     dependsOn:
-      - capture-repo-state
+      - write-repo-state
     outputs:
       - .tmp/workflow-artifacts/test-signal.md
     doneWhen:
@@ -127,7 +218,7 @@ steps:
       - write
     loadSkills: []
     dependsOn:
-      - capture-repo-state
+      - write-repo-state
     outputs:
       - .tmp/workflow-artifacts/package-signal.md
     doneWhen:
