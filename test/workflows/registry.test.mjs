@@ -51,12 +51,14 @@ test('register multiple versions and retrieve by version', () => {
   assert.equal(registry.get('test-flow', '3.0.0'), null);
 });
 
-test('get without version returns latest registered', () => {
+test('get without version returns highest semantic version', () => {
   const registry = new WorkflowRegistry();
-  registry.register(makeWorkflow({ version: '1.0.0' }));
   registry.register(makeWorkflow({ version: '2.0.0' }));
+  registry.register(makeWorkflow({ version: '1.9.9' }));
+  registry.register(makeWorkflow({ version: '2.1.0' }));
+  registry.register(makeWorkflow({ version: '2.1.0-alpha.1' }));
 
-  assert.equal(registry.get('test-flow').version, '2.0.0');
+  assert.equal(registry.get('test-flow').version, '2.1.0');
 });
 
 test('list returns summaries of all registered workflows', () => {
