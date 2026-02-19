@@ -63,6 +63,16 @@ test('read/write tools reject root escape and .env writes', async () => {
       writeTool.execute({ path: '.env', content: 'SECRET=1' }),
       /not allowed/,
     );
+
+    await assert.rejects(
+      writeTool.execute({ path: '\\.ferretbot/.tmp/workflow-artifacts/repo/git-status.txt', content: '' }),
+      /cannot start with a backslash/,
+    );
+
+    await assert.rejects(
+      readTool.execute({ path: '\\.ferretbot/.tmp/workflow-artifacts/repo/git-status.txt' }),
+      /cannot start with a backslash/,
+    );
   });
 });
 
