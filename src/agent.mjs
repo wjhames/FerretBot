@@ -1,7 +1,16 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { Agent as UndiciAgent, setGlobalDispatcher } from 'undici';
 
 import { createAgentLifecycle } from './core/lifecycle.mjs';
+
+const UNDICI_HEADERS_TIMEOUT_MS = 30 * 60 * 1000;
+const UNDICI_CONNECT_TIMEOUT_MS = 60 * 1000;
+
+setGlobalDispatcher(new UndiciAgent({
+  headersTimeout: UNDICI_HEADERS_TIMEOUT_MS,
+  connectTimeout: UNDICI_CONNECT_TIMEOUT_MS,
+}));
 
 function isMainModule() {
   const entryArg = process.argv[1];
