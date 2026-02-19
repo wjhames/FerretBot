@@ -92,14 +92,13 @@ Runtime data is still local-only and gitignored:
 - Override workflow root with `workflows.rootDir` in `~/.ferretbot/config.json`.
 - Engine supports `agent` and system file steps.
 - `loadSkills` resolution order: step, then workflow, then global.
-- This repo tracks `.ferretbot/workflows/*` as shareable workflow definitions.
+- This repo currently ships no bundled workflows under `.ferretbot/workflows/`.
 - Workflow step contracts currently support: `id`, `name`, `type`, `instruction`, `tools`, `loadSkills`, `dependsOn`, `outputs`, `doneWhen`, `onFail`, `retries`, `path`, `content`, `mode`.
 - Workflow step context is step-focused by default: current step, allowed tools, workflow args, prior step results, and requested skills.
 - Built-in success checks include `contains`, `not_contains`, `regex`, `exit_code`, `command_exit_code`, `file_exists`, `file_not_exists`, `file_contains`, `file_regex`, `file_hash_changed`, `non_empty`.
 - Contract-first default: each step should declare `outputs` and file-backed `doneWhen` checks.
 - Agent step completion emits structured payload fields: `resultText`, `toolCalls`, `toolResults`, `artifacts`.
 - Runs can end in `blocked` when `onFail: blocked` is set or when no-progress is detected on repeated failed attempts.
-- Showcase workflow: `.ferretbot/workflows/workspace-snapshot/workflow.yaml` (`v5.0.0`).
 
 ## Current Status
 
