@@ -72,10 +72,23 @@ export function createAgentContextLoader(options = {}) {
     });
 
     const turns = Array.isArray(collected?.turns)
-      ? collected.turns.map((entry) => ({
-          role: entry?.role === 'assistant' ? 'assistant' : 'user',
-          content: String(entry?.content ?? '').trim(),
-        })).filter((entry) => entry.content.length > 0)
+      ? collected.turns
+        .map((entry) => {
+          const role = entry?.role === 'assistant'
+            ? 'assistant'
+            : (entry?.role === 'user' ? 'user' : null);
+          if (!role) {
+            return null;
+          }
+
+          const content = String(entry?.content ?? '').trim();
+          if (content.length === 0) {
+            return null;
+          }
+
+          return { role, content };
+        })
+        .filter(Boolean)
       : [];
 
     return {

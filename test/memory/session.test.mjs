@@ -81,3 +81,27 @@ test('returns full history when token limit is not set', async () => {
   assert.equal(result.turns.length, 2);
   assert.equal(result.summary, '');
 });
+
+test('excludes tool call/result entries from collected conversation', async () => {
+  const memory = new SessionMemory({ baseDir: path.join(FIXTURE_ROOT, 'filter-tools') });
+  await memory.appendTurn('session-filter', { role: 'user', type: 'user_input', content: 'question' });
+  await memory.appendTurn('session-filter', {
+    role: 'assistant',
+    type: 'tool_call',
+    content: '{"name":"read","arguments":{"path":"README.md"}}',
+  });
+  await memory.appendTurn('session-filter', {
+    role: 'system',
+    type: 'tool_result',
+    content: '{"success":true,"stdout":"..."}',
+  });
+  await memory.appendTurn('session-filter', { role: 'assistant', type: 'agent_response', content: 'answer' });
+
+  const result = await memory.collectConversation('session-filter');
+
+  assert.equal(result.turns.length, 2);
+  assert.deepEqual(
+    result.turns.map((entry) => entry.type),
+    ['user_input', 'agent_response'],
+  );
+});

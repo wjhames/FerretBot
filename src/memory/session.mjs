@@ -89,6 +89,28 @@ function normalizeEntry(entry) {
   };
 }
 
+function isConversationEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return false;
+  }
+
+  const type = String(entry.type ?? '').trim().toLowerCase();
+  if (type === 'tool_call' || type === 'tool_result') {
+    return false;
+  }
+
+  if (type === 'user_input' || type === 'agent_response') {
+    return true;
+  }
+
+  const role = String(entry.role ?? '').trim().toLowerCase();
+  if (role === 'user' || role === 'assistant') {
+    return true;
+  }
+
+  return false;
+}
+
 function parseJsonLines(raw) {
   const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
   const parsed = [];
@@ -243,7 +265,9 @@ export class SessionMemory {
 
   async collectConversation(sessionId, options = {}) {
     const { tokenLimit = 0 } = options;
-    const turns = await this.readTurns(sessionId);
+    const allTurns = await this.readTurns(sessionId);
+    const turns = allTurns.filter((entry) => isConversationEntry(entry));
+
     if (turns.length === 0) {
       return { turns: [], summary: '' };
     }

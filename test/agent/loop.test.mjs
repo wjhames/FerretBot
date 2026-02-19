@@ -844,3 +844,76 @@ test('workflow context stays step-focused while still loading skills and prior s
   assert.deepEqual(contextInput.promptLayers, {});
   assert.equal(contextInput.extraRules, '');
 });
+
+test('loop ignores non-conversation roles from session memory context', async () => {
+  const bus = createEventBus();
+  const seenPrompts = [];
+
+  const provider = {
+    async chatCompletion(input) {
+      seenPrompts.push(input.messages);
+      return {
+        text: 'ok',
+        toolCalls: [],
+        finishReason: 'stop',
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      };
+    },
+  };
+
+  const parser = {
+    parse(text) {
+      return { kind: 'final', text };
+    },
+  };
+
+  const loop = createAgentLoop({
+    bus,
+    provider,
+    parser,
+    sessionMemory: {
+      async collectConversation() {
+        return {
+          summary: '',
+          turns: [
+            { role: 'assistant', content: 'assistant turn' },
+            { role: 'user', content: 'user turn' },
+            { role: 'system', content: 'must not be included' },
+          ],
+        };
+      },
+    },
+    contextLimit: 2_048,
+    layerBudgets: {
+      system: 256,
+      step: 0,
+      skills: 0,
+      identity: 0,
+      soul: 0,
+      user: 0,
+      boot: 0,
+      memory: 0,
+      bootstrap: 0,
+      prior: 0,
+      conversation: 1_024,
+    },
+    maxTokens: 256,
+  });
+
+  loop.start();
+
+  await bus.emit({
+    type: 'user:input',
+    channel: 'tui',
+    sessionId: 'filter-roles',
+    content: { text: 'run' },
+  });
+
+  await waitFor(() => seenPrompts.length > 0);
+  loop.stop();
+
+  const firstPrompt = seenPrompts[0] ?? [];
+  assert.ok(firstPrompt.some((message) => message.role === 'assistant' && message.content === 'assistant turn'));
+  assert.ok(firstPrompt.some((message) => message.role === 'user' && message.content === 'user turn'));
+  assert.ok(!firstPrompt.some((message) => message.content === 'must not be included'));
+});
