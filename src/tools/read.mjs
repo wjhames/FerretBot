@@ -42,6 +42,9 @@ async function resolveSafePath(rootDirOrDirs, targetPath, options = {}) {
     ? normalizeRootDirs({ rootDirs: rootDirOrDirs })
     : normalizeRootDirs({ rootDir: rootDirOrDirs });
   const normalizedPath = targetPath.trim();
+  if (/^\\+/.test(normalizedPath)) {
+    throw new Error('Path cannot start with a backslash.');
+  }
   const preferExisting = options.preferExisting !== false;
   const targetIsAbsolute = path.isAbsolute(normalizedPath);
 
