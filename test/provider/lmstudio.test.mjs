@@ -192,6 +192,27 @@ test('discoverModelCapabilities returns model context window and caches result',
   assert.deepEqual(second, first);
 });
 
+test('discoverModelCapabilities can require configured model to exist', async () => {
+  const provider = createLmStudioProvider({
+    model: 'missing-model',
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          data: [
+            { id: 'other-model', context_length: 4096 },
+          ],
+        };
+      },
+    }),
+  });
+
+  await assert.rejects(
+    provider.discoverModelCapabilities({ requireDefaultModel: true }),
+    /Configured LM Studio model 'missing-model' was not found/,
+  );
+});
+
 test('countTokens uses tokenize endpoint and returns token length', async () => {
   const calls = [];
   const provider = createLmStudioProvider({

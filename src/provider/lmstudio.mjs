@@ -126,7 +126,12 @@ export class LmStudioProvider {
       signal: options.signal,
     });
     const models = Array.isArray(response?.data) ? response.data : [];
-    const selected = models.find((model) => model?.id === this.#defaultModel) ?? models[0] ?? {};
+    const selectedExact = models.find((model) => model?.id === this.#defaultModel) ?? null;
+    if (options.requireDefaultModel && !selectedExact) {
+      throw new Error(`Configured LM Studio model '${this.#defaultModel}' was not found.`);
+    }
+
+    const selected = selectedExact ?? models[0] ?? {};
     const contextWindow = extractContextWindow(selected);
 
     this.#modelCapabilities = contextWindow

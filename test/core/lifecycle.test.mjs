@@ -339,6 +339,60 @@ test('lifecycle default tool registry reads relative files from current working 
   }
 });
 
+test('lifecycle fails fast when provider preflight fails', async () => {
+  const lifecycle = createAgentLifecycle({
+    loadConfig: async () => ({}),
+    createProvider: () => ({
+      chatCompletion: async () => ({ text: '', usage: {}, finishReason: 'stop' }),
+      async discoverModelCapabilities() {
+        throw new Error('connection refused');
+      },
+    }),
+  });
+
+  await assert.rejects(
+    lifecycle.start(),
+    /Provider preflight failed\. Ensure LM Studio is running/,
+  );
+});
+
+test('lifecycle can disable provider preflight in config', async () => {
+  const lifecycle = createAgentLifecycle({
+    loadConfig: async () => ({
+      provider: {
+        preflight: false,
+      },
+    }),
+    createProvider: () => ({
+      chatCompletion: async () => ({ text: '', usage: {}, finishReason: 'stop' }),
+      async discoverModelCapabilities() {
+        throw new Error('should not run');
+      },
+    }),
+    createParser: () => ({ parse: () => ({ kind: 'final', text: '' }) }),
+    createWorkflowRegistry: () => ({ async loadAll() {}, get() { return null; } }),
+    createWorkflowEngine: () => ({ start() {}, stop() {} }),
+    createSkillLoader: () => ({}),
+    createSessionMemory: () => ({}),
+    createWorkspaceManager: () => ({ async ensureWorkspace() {} }),
+    createToolRegistry: () => ({ execute: async () => ({ ok: true }) }),
+    createAgentLoop: () => ({ start() {}, stop() {} }),
+    createIpcServer: () => ({
+      async start() {},
+      async stopAccepting() {},
+      async disconnectAllClients() {},
+    }),
+    createScheduler: () => ({
+      async restore() {},
+      async start() {},
+      async stop() {},
+    }),
+  });
+
+  await lifecycle.start();
+  await lifecycle.shutdown('test');
+});
+
 test('lifecycle passes discovered provider context window into agent loop config', async () => {
   let capturedLoopConfig = null;
 

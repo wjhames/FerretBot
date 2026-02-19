@@ -65,6 +65,28 @@ async function discoverProviderCapabilities(provider) {
   }
 }
 
+async function preflightProvider(provider, config = {}) {
+  if (!provider || typeof provider.chatCompletion !== 'function') {
+    throw new TypeError('Provider must expose chatCompletion().');
+  }
+
+  const shouldPreflight = config.provider?.preflight !== false;
+  if (!shouldPreflight || typeof provider.discoverModelCapabilities !== 'function') {
+    return null;
+  }
+
+  try {
+    return await provider.discoverModelCapabilities({
+      force: true,
+      requireDefaultModel: true,
+    });
+  } catch (error) {
+    throw new Error(
+      `Provider preflight failed. Ensure LM Studio is running and the configured model is loaded. ${error?.message ?? String(error)}`,
+    );
+  }
+}
+
 function defaultCreateToolRegistry({ config = {}, bus, workspaceManager } = {}) {
   const configuredRootDirs = Array.isArray(config.tools?.rootDirs)
     ? config.tools.rootDirs.filter((value) => typeof value === 'string' && value.trim().length > 0)
@@ -252,7 +274,8 @@ export class AgentLifecycle {
 
     const bus = this.#createBus(config);
     const provider = this.#createProvider(config);
-    const providerCapabilities = await discoverProviderCapabilities(provider);
+    const providerCapabilities = await preflightProvider(provider, config)
+      ?? await discoverProviderCapabilities(provider);
     const parser = this.#createParser(config);
 
     const skillLoader = this.#createSkillLoader({ config });
