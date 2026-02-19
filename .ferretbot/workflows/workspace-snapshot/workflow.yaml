@@ -43,9 +43,7 @@ steps:
         text: FACTS_OK
       - type: not_contains
         text: FACTS_FAIL
-    timeout: null
     retries: 2
-    condition: null
 
   - id: write-status
     name: Write STATUS.md
@@ -79,9 +77,7 @@ steps:
         text: STATUS_WRITTEN
       - type: not_contains
         text: STATUS_FAIL
-    timeout: null
     retries: 2
-    condition: null
 
   - id: verify-status
     name: Verify STATUS.md
@@ -111,6 +107,4 @@ steps:
         text: VERIFY_OK
       - type: not_contains
         text: VERIFY_FAIL
-    timeout: null
     retries: 0
-    condition: null

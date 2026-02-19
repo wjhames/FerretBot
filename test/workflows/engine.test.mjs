@@ -75,9 +75,7 @@ function makeWorkflow(overrides = {}) {
         loadSkills: [],
         dependsOn: [],
         successChecks: [],
-        timeout: null,
         retries: 0,
-        condition: null,
       },
     ],
     ...overrides,
@@ -126,8 +124,8 @@ test('completing a step advances to next and completes the run', async () => {
     const bus = new FakeBus();
     const wf = makeWorkflow({
       steps: [
-        { id: 's1', name: 's1', instruction: 'first', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], timeout: null, retries: 0, condition: null },
-        { id: 's2', name: 's2', instruction: 'second', tools: ['read'], loadSkills: [], dependsOn: ['s1'], successChecks: [], timeout: null, retries: 0, condition: null },
+        { id: 's1', name: 's1', instruction: 'first', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], retries: 0 },
+        { id: 's2', name: 's2', instruction: 'second', tools: ['read'], loadSkills: [], dependsOn: ['s1'], successChecks: [], retries: 0 },
       ],
     });
     const registry = makeRegistry([wf]);
@@ -168,8 +166,8 @@ test('dependency ordering prevents step from starting before deps complete', asy
     const bus = new FakeBus();
     const wf = makeWorkflow({
       steps: [
-        { id: 'a', name: 'a', instruction: 'do a', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], timeout: null, retries: 0, condition: null },
-        { id: 'b', name: 'b', instruction: 'do b', tools: ['bash'], loadSkills: [], dependsOn: ['a'], successChecks: [], timeout: null, retries: 0, condition: null },
+        { id: 'a', name: 'a', instruction: 'do a', tools: ['bash'], loadSkills: [], dependsOn: [], successChecks: [], retries: 0 },
+        { id: 'b', name: 'b', instruction: 'do b', tools: ['bash'], loadSkills: [], dependsOn: ['a'], successChecks: [], retries: 0 },
       ],
     });
     const registry = makeRegistry([wf]);
@@ -195,7 +193,7 @@ test('successChecks failure retries up to limit then fails the run', async () =>
           id: 's1', name: 's1', instruction: 'do it', tools: ['bash'],
           loadSkills: [], dependsOn: [],
           successChecks: [{ type: 'contains', text: 'SUCCESS' }],
-          timeout: null, retries: 1, condition: null,
+          retries: 1,
         },
       ],
     });
@@ -238,7 +236,7 @@ test('successChecks pass after retry', async () => {
           id: 's1', name: 's1', instruction: 'do it', tools: ['bash'],
           loadSkills: [], dependsOn: [],
           successChecks: [{ type: 'contains', text: 'SUCCESS' }],
-          timeout: null, retries: 1, condition: null,
+          retries: 1,
         },
       ],
     });
@@ -353,9 +351,7 @@ test('system workflow steps execute without agent loop and complete run', async 
           loadSkills: [],
           dependsOn: [],
           successChecks: [],
-          timeout: null,
           retries: 0,
-          condition: null,
         },
         {
           id: 'delete',
@@ -368,9 +364,7 @@ test('system workflow steps execute without agent loop and complete run', async 
           loadSkills: [],
           dependsOn: ['write'],
           successChecks: [],
-          timeout: null,
           retries: 0,
-          condition: null,
         },
       ],
     });

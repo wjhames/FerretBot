@@ -6,7 +6,7 @@ const ALLOWED_WORKFLOW_FIELDS = new Set([
 
 const ALLOWED_STEP_FIELDS = new Set([
   'id', 'name', 'instruction', 'tools', 'loadSkills', 'dependsOn',
-  'successChecks', 'timeout', 'retries', 'condition',
+  'successChecks', 'retries',
   'type', 'path', 'content', 'mode',
 ]);
 const ALLOWED_STEP_TYPES = new Set([
@@ -201,17 +201,11 @@ export function validateWorkflow(raw) {
       }
     }
 
-    const timeout = rawStep.timeout != null ? Number(rawStep.timeout) : null;
-    if (timeout !== null && (!Number.isFinite(timeout) || timeout <= 0)) {
-      stepErrors.push('timeout must be a positive number.');
-    }
-
     const retries = rawStep.retries != null ? Number(rawStep.retries) : 0;
     if (!Number.isInteger(retries) || retries < 0) {
       stepErrors.push('retries must be a non-negative integer.');
     }
 
-    const condition = rawStep.condition != null ? normalizeText(String(rawStep.condition)) || null : null;
     const stepName = normalizeText(rawStep.name ?? '') || stepId;
 
     if (stepErrors.length > 0) {
@@ -226,9 +220,7 @@ export function validateWorkflow(raw) {
         loadSkills,
         dependsOn,
         successChecks,
-        timeout,
         retries,
-        condition,
         path: stepPath || null,
         content: content || null,
         mode,

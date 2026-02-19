@@ -91,6 +91,7 @@ Runtime data is still local-only and gitignored:
 - Engine supports `agent` and system file steps.
 - `loadSkills` resolution order: step, then workflow, then global.
 - This repo tracks `.ferretbot/workflows/*` as shareable workflow definitions.
+- Workflow step contracts currently support: `id`, `name`, `type`, `instruction`, `tools`, `loadSkills`, `dependsOn`, `successChecks`, `retries`, `path`, `content`, `mode`.
 
 ## Current Status
 

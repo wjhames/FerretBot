@@ -26,7 +26,6 @@ test('validates a minimal valid workflow', () => {
   assert.equal(result.workflow.steps.length, 1);
   assert.equal(result.workflow.steps[0].id, 'step-1');
   assert.equal(result.workflow.steps[0].retries, 0);
-  assert.equal(result.workflow.steps[0].condition, null);
 });
 
 test('validates a workflow with all optional fields', () => {
@@ -45,9 +44,7 @@ test('validates a workflow with all optional fields', () => {
         loadSkills: ['build.skill.md'],
         dependsOn: [],
         successChecks: [{ type: 'exit_code', expected: 0 }],
-        timeout: 30000,
         retries: 2,
-        condition: 'steps.init.output',
       },
     ],
   });
@@ -58,7 +55,6 @@ test('validates a workflow with all optional fields', () => {
   assert.equal(result.workflow.inputs.length, 1);
   const step = result.workflow.steps[0];
   assert.equal(step.name, 'Build Project');
-  assert.equal(step.timeout, 30000);
   assert.equal(step.retries, 2);
   assert.equal(step.loadSkills.length, 1);
   assert.equal(step.successChecks.length, 1);
