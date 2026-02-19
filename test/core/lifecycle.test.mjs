@@ -23,6 +23,10 @@ test('lifecycle start/shutdown follows expected orchestration order', async () =
 
   let queueDepth = 1;
   const bus = {
+    on() {
+      return () => {};
+    },
+    async emit() {},
     getQueueDepth() {
       const current = queueDepth;
       queueDepth = 0;
@@ -187,6 +191,10 @@ test('lifecycle responds to SIGTERM and shuts down once', async () => {
     drainPollMs: 1,
     loadConfig: async () => ({}),
     createBus: () => ({
+      on() {
+        return () => {};
+      },
+      async emit() {},
       getQueueDepth() {
         return 0;
       },
