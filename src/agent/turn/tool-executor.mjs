@@ -71,6 +71,9 @@ export async function executeToolCall(options = {}) {
 
   const nextToolCalls = toolCalls + 1;
   if (nextToolCalls > maxToolCallsPerStep) {
+    const requestId = typeof event?.content?.requestId === 'string' && event.content.requestId.trim().length > 0
+      ? event.content.requestId.trim()
+      : null;
     queueEmit({
       type: 'agent:response',
       channel: event.channel,
@@ -79,6 +82,7 @@ export async function executeToolCall(options = {}) {
         text: 'Tool call limit reached before final response.',
         finishReason: 'tool_limit',
         usage: completion.usage,
+        requestId,
       },
     });
     return { done: true, toolCalls: nextToolCalls, correctionRetries: 0 };
