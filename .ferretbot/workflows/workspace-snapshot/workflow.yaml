@@ -1,5 +1,5 @@
 id: workspace-snapshot
-version: "6.3.0"
+version: "6.3.1"
 name: Repo Action Plan
 description: Build an evidence-based, executable action plan from repository signals using small deterministic steps.
 
@@ -262,7 +262,7 @@ steps:
     type: agent
     instruction: |
       Write exactly one file:
-      - `ACTION_PLAN.md`
+      - `.ferretbot/.tmp/workflow-artifacts/ACTION_PLAN.md`
 
       Read:
       - `.ferretbot/.tmp/workflow-artifacts/repo-state.md`
@@ -297,18 +297,18 @@ steps:
       - capture-test-signal
       - capture-package-signal
     outputs:
-      - ACTION_PLAN.md
+      - .tmp/workflow-artifacts/ACTION_PLAN.md
     doneWhen:
       - type: file_exists
-        path: ACTION_PLAN.md
+        path: .tmp/workflow-artifacts/ACTION_PLAN.md
       - type: file_contains
-        path: ACTION_PLAN.md
+        path: .tmp/workflow-artifacts/ACTION_PLAN.md
         text: "## Action Plan"
       - type: file_contains
-        path: ACTION_PLAN.md
+        path: .tmp/workflow-artifacts/ACTION_PLAN.md
         text: "### Top 3 Actions"
       - type: file_contains
-        path: ACTION_PLAN.md
+        path: .tmp/workflow-artifacts/ACTION_PLAN.md
         text: "### Verification Commands"
     onFail: blocked
     retries: 1
@@ -317,7 +317,7 @@ steps:
     name: Verify Plan
     type: agent
     instruction: |
-      Read `ACTION_PLAN.md` and all workflow artifacts, then verify consistency.
+      Read `.ferretbot/.tmp/workflow-artifacts/ACTION_PLAN.md` and all workflow artifacts, then verify consistency.
 
       Write exactly one file:
       - `.ferretbot/.tmp/workflow-artifacts/verification.txt`
@@ -328,7 +328,7 @@ steps:
       - VERIFY_FAIL: <reason>
 
       Minimum checks:
-      - ACTION_PLAN.md has all required headings.
+      - `.ferretbot/.tmp/workflow-artifacts/ACTION_PLAN.md` has all required headings.
       - Exactly 3 actions are present.
       - Every action references observed evidence from artifacts.
       - Every action includes a concrete verification command.
