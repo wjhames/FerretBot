@@ -16,6 +16,16 @@ function ensureSessionDir(baseDir) {
   return fs.mkdir(baseDir, { recursive: true });
 }
 
+async function atomicWriteFile(filePath, content) {
+  const dir = path.dirname(filePath);
+  const tempPath = path.join(
+    dir,
+    `.${path.basename(filePath)}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  );
+  await fs.writeFile(tempPath, content, 'utf-8');
+  await fs.rename(tempPath, filePath);
+}
+
 function toSafeString(value) {
   return typeof value === 'string' ? value : String(value ?? '');
 }
@@ -208,7 +218,7 @@ export class SessionMemory {
       updatedAt: Date.now(),
       summary: truncateSummaryText(summary),
     };
-    await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf-8');
+    await atomicWriteFile(filePath, JSON.stringify(payload, null, 2));
   }
 
   async #summarizeDroppedEntries({ sessionId, priorSummary, droppedEntries }) {
@@ -247,8 +257,41 @@ export class SessionMemory {
     const normalized = normalizeEntry(entry ?? {});
     const line = `${JSON.stringify(normalized)}\n`;
     const filePath = this.#resolveSessionPath(sessionId);
-    await fs.appendFile(filePath, line, 'utf-8');
+    let existing = '';
+    try {
+      existing = await fs.readFile(filePath, 'utf-8');
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') {
+        throw error;
+      }
+    }
+    await atomicWriteFile(filePath, `${existing}${line}`);
     return normalized;
+  }
+
+  async #quarantineCorruptSessionFile(sessionId, filePath, parsedEntries = []) {
+    const quarantinePath = `${filePath}.corrupt-${Date.now()}`;
+
+    try {
+      await fs.rename(filePath, quarantinePath);
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        return null;
+      }
+      throw error;
+    }
+
+    const cleaned = parsedEntries
+      .map((entry) => `${JSON.stringify(normalizeEntry(entry))}\n`)
+      .join('');
+    await atomicWriteFile(filePath, cleaned);
+    this.#logger?.warn?.('Session memory quarantined malformed JSONL file and rewrote valid entries.', {
+      sessionId,
+      filePath,
+      quarantinePath,
+      recoveredEntries: parsedEntries.length,
+    });
+    return quarantinePath;
   }
 
   async readTurns(sessionId) {
@@ -279,6 +322,7 @@ export class SessionMemory {
         filePath,
         malformedCount: malformed.length,
       });
+      await this.#quarantineCorruptSessionFile(sessionId, filePath, parsed);
     }
     return parsed.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
   }

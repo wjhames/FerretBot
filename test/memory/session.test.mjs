@@ -133,8 +133,19 @@ test('readTurns warns when malformed JSONL lines are present', async () => {
   const turns = await memory.readTurns('session-bad');
 
   assert.equal(turns.length, 2);
-  assert.equal(warned.length, 1);
+  assert.equal(warned.length, 2);
   assert.equal(warned[0][0], 'Session memory encountered malformed JSONL entries.');
   assert.equal(warned[0][1].sessionId, 'session-bad');
   assert.equal(warned[0][1].malformedCount, 1);
+  assert.equal(
+    warned[1][0],
+    'Session memory quarantined malformed JSONL file and rewrote valid entries.',
+  );
+  assert.equal(warned[1][1].sessionId, 'session-bad');
+  assert.equal(warned[1][1].recoveredEntries, 2);
+
+  const files = await fs.readdir(baseDir);
+  assert.ok(files.some((file) => file.startsWith('session-bad.jsonl.corrupt-')));
+  const repairedRaw = await fs.readFile(path.join(baseDir, 'session-bad.jsonl'), 'utf-8');
+  assert.equal(repairedRaw.includes('{bad-json'), false);
 });
