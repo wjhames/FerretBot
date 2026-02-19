@@ -1,6 +1,5 @@
 import { createBashTool } from './bash.mjs';
 import { createEditTool } from './edit.mjs';
-import { createPatchTool } from './patch.mjs';
 import { createReadTool } from './read.mjs';
 import { createWriteTool } from './write.mjs';
 
@@ -133,24 +132,6 @@ const BUILT_IN_TOOLS = [
     create: (options) => createEditTool({
       rootDir: options.rootDir,
       rootDirs: options.rootDirs,
-    }),
-  },
-  {
-    name: 'patch',
-    description: 'Apply unified diff patches to files in the workspace.',
-    schema: {
-      type: 'object',
-      properties: {
-        patch: { type: 'string' },
-        checkOnly: { type: 'boolean' },
-      },
-      required: ['patch'],
-      additionalProperties: false,
-    },
-    create: (options) => createPatchTool({
-      rootDir: options.rootDir,
-      rootDirs: options.rootDirs,
-      cwd: options.cwd,
     }),
   },
   {
