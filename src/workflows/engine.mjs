@@ -84,6 +84,16 @@ function stableStringify(value) {
   }
 }
 
+async function atomicWriteJson(filePath, payload) {
+  const dir = path.dirname(filePath);
+  const tempPath = path.join(
+    dir,
+    `.${path.basename(filePath)}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  );
+  await fs.writeFile(tempPath, JSON.stringify(payload, null, 2), 'utf8');
+  await fs.rename(tempPath, filePath);
+}
+
 export class WorkflowEngine {
   #bus;
   #registry;
@@ -567,7 +577,7 @@ export class WorkflowEngine {
   async #persistRun(run) {
     await this.#ensureStorageDir();
     const filePath = path.join(this.#storageDir, `run-${run.id}.json`);
-    await fs.writeFile(filePath, JSON.stringify(run, null, 2), 'utf8');
+    await atomicWriteJson(filePath, run);
   }
 
   async #ensureStorageDir() {
