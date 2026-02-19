@@ -103,11 +103,48 @@ export async function executeToolCall(options = {}) {
     toolCallId: parsedToolCall.toolCallId ?? null,
   });
 
-  const toolResult = await toolRegistry.execute({
-    name: parsedToolCall.toolName,
-    arguments: parsedToolCall.arguments,
-    event,
-  });
+  let toolResult;
+  try {
+    toolResult = await toolRegistry.execute({
+      name: parsedToolCall.toolName,
+      arguments: parsedToolCall.arguments,
+      event,
+    });
+  } catch (error) {
+    const reason = error?.message ?? String(error);
+    const shouldRetry = correctionRetries < retryLimit;
+
+    if (!shouldRetry) {
+      emitCorrectionFailure(event, `Tool '${parsedToolCall.toolName}' failed: ${reason}`);
+      return { done: true, toolCalls: nextToolCalls, correctionRetries };
+    }
+
+    const nextRetries = correctionRetries + 1;
+    messages.push({
+      role: 'assistant',
+      content: parsedToolCall.rawAssistantText ?? completion.text,
+    });
+    messages.push({ role: 'system', content: buildCorrectionPrompt(`Tool '${parsedToolCall.toolName}' failed: ${reason}`) });
+    queueEmit({
+      type: 'agent:status',
+      channel: event.channel,
+      sessionId: event.sessionId,
+      content: {
+        phase: 'tool:retry',
+        text: `Retrying failed tool call (${nextRetries}/${retryLimit}).`,
+        detail: reason,
+        tool: {
+          name: parsedToolCall.toolName,
+        },
+      },
+    });
+
+    return {
+      done: false,
+      toolCalls: nextToolCalls,
+      correctionRetries: nextRetries,
+    };
+  }
   toolResultHistory.push({
     name: parsedToolCall.toolName,
     result: toolResult,
