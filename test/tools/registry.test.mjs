@@ -84,3 +84,32 @@ test('registry built-ins register and execute read/write tools', async () => {
     assert.equal(read.truncated, true);
   });
 });
+
+test('registry forwards execution context to tools', async () => {
+  const registry = createToolRegistry();
+  const calls = [];
+
+  registry.register({
+    name: 'capture',
+    schema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+    async execute(_args, context) {
+      calls.push(context);
+      return { ok: true };
+    },
+  });
+
+  await registry.execute({
+    name: 'capture',
+    arguments: {},
+    event: { type: 'user:input' },
+    context: { writeRollback: { test: true } },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].event.type, 'user:input');
+  assert.deepEqual(calls[0].writeRollback, { test: true });
+});

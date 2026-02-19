@@ -6,6 +6,41 @@ import {
   toToolCallFromNative,
   toToolCallFromParsed,
 } from './policy.mjs';
+import { createTurnWriteRollback } from './write-rollback.mjs';
+
+async function rollbackTurnWrites({ event, queueEmit, writeRollback }) {
+  if (!writeRollback || typeof writeRollback.hasChanges !== 'function') {
+    return;
+  }
+
+  if (!writeRollback.hasChanges()) {
+    return;
+  }
+
+  try {
+    const restored = await writeRollback.restore();
+    queueEmit({
+      type: 'agent:status',
+      channel: event.channel,
+      sessionId: event.sessionId,
+      content: {
+        phase: 'tool:rollback',
+        text: `Reverted ${restored} file change(s) from failed turn.`,
+      },
+    });
+  } catch (error) {
+    queueEmit({
+      type: 'agent:status',
+      channel: event.channel,
+      sessionId: event.sessionId,
+      content: {
+        phase: 'tool:rollback_failed',
+        text: 'Failed to revert one or more file changes from failed turn.',
+        detail: error?.message ?? String(error),
+      },
+    });
+  }
+}
 
 export async function runAgentTurn(options = {}) {
   const {
@@ -22,6 +57,7 @@ export async function runAgentTurn(options = {}) {
     emitCorrectionFailure,
     queueEmit,
     executeToolCall,
+    createWriteRollback = createTurnWriteRollback,
   } = options;
 
   const initial = await buildInitialContext(event);
@@ -35,6 +71,7 @@ export async function runAgentTurn(options = {}) {
     continuationCount: 0,
     accumulatedTextParts: [],
   };
+  const writeRollback = createWriteRollback();
 
   await persistInputTurn(event);
 
@@ -57,11 +94,13 @@ export async function runAgentTurn(options = {}) {
         toolCallHistory: state.toolCallHistory,
         toolResultHistory: state.toolResultHistory,
         correctionRetries: state.correctionRetries,
+        toolExecutionContext: { writeRollback },
       });
       state.toolCalls = handled.toolCalls;
       state.correctionRetries = handled.correctionRetries;
 
       if (handled.done) {
+        await rollbackTurnWrites({ event, queueEmit, writeRollback });
         return;
       }
       continue;
@@ -115,6 +154,7 @@ export async function runAgentTurn(options = {}) {
     if (parsed.kind === 'retry_parse') {
       const shouldRetry = state.correctionRetries < retryLimit;
       if (!shouldRetry) {
+        await rollbackTurnWrites({ event, queueEmit, writeRollback });
         emitCorrectionFailure(event, 'Unable to parse model tool JSON after retries.');
         return;
       }
@@ -143,11 +183,13 @@ export async function runAgentTurn(options = {}) {
       toolCallHistory: state.toolCallHistory,
       toolResultHistory: state.toolResultHistory,
       correctionRetries: state.correctionRetries,
+      toolExecutionContext: { writeRollback },
     });
     state.toolCalls = handled.toolCalls;
     state.correctionRetries = handled.correctionRetries;
 
     if (handled.done) {
+      await rollbackTurnWrites({ event, queueEmit, writeRollback });
       return;
     }
   }

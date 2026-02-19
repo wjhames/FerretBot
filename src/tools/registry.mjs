@@ -167,7 +167,7 @@ export class ToolRegistry {
         name: builtIn.name,
         description: builtIn.description,
         schema: builtIn.schema,
-        execute: (input) => builtIn.create(this.#builtInOptions).execute(input),
+        execute: (input, context) => builtIn.create(this.#builtInOptions).execute(input, context),
       });
     }
   }
@@ -219,7 +219,8 @@ export class ToolRegistry {
     }
 
     const tool = this.#tools.get(name);
-    return tool.execute(args, { event });
+    const context = isPlainObject(call.context) ? call.context : {};
+    return tool.execute(args, { event, ...context });
   }
 
   #normalizeDefinition(definition) {

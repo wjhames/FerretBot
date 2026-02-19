@@ -121,3 +121,38 @@ test('executeToolCall retries when tool execution throws', async () => {
   assert.ok(status);
   assert.equal(status.content.phase, 'tool:retry');
 });
+
+test('executeToolCall forwards tool execution context into registry execute', async () => {
+  let capturedContext = null;
+
+  await executeToolCall({
+    event: { channel: 'tui', sessionId: 's1' },
+    messages: [],
+    completion: { text: '{"tool":"write"}', usage: {} },
+    parsedToolCall: {
+      toolName: 'write',
+      arguments: { path: 'notes/a.txt', content: 'hello' },
+      toolCallId: null,
+      rawAssistantText: '{"tool":"write"}',
+    },
+    toolCalls: 0,
+    correctionRetries: 0,
+    retryLimit: 2,
+    maxToolCallsPerStep: 3,
+    toolExecutionContext: { writeRollback: { id: 'rollback' } },
+    toolRegistry: {
+      validateCall() {
+        return { valid: true, errors: [] };
+      },
+      async execute(call) {
+        capturedContext = call.context;
+        return { ok: true };
+      },
+    },
+    queueEmit: () => {},
+    appendSessionTurn: async () => {},
+    emitCorrectionFailure: () => {},
+  });
+
+  assert.deepEqual(capturedContext, { writeRollback: { id: 'rollback' } });
+});

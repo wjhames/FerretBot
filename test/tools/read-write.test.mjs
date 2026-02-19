@@ -159,3 +159,33 @@ test('read/write tools support multiple allowed roots', async () => {
     assert.equal(readRepoRelative.content, 'repo-write');
   });
 });
+
+test('write tool calls rollback capture hook before writes', async () => {
+  await withTempDir(async (rootDir) => {
+    const writeTool = createWriteTool({ rootDir });
+    const filePath = path.join(rootDir, 'notes', 'log.txt');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, 'start', 'utf8');
+
+    const captured = [];
+    const rollback = {
+      async captureFile(targetPath) {
+        captured.push(targetPath);
+      },
+    };
+
+    await writeTool.execute(
+      { path: 'notes/log.txt', content: '-one', mode: 'append' },
+      { writeRollback: rollback },
+    );
+
+    await writeTool.execute(
+      { path: 'notes/log.txt', content: '-two', mode: 'append' },
+      { writeRollback: rollback },
+    );
+
+    assert.equal(captured.length, 2);
+    assert.equal(captured[0], filePath);
+    assert.equal(captured[1], filePath);
+  });
+});

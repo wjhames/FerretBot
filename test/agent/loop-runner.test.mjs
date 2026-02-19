@@ -70,3 +70,120 @@ test('runAgentTurn drives parse-retry then final emit', async () => {
   assert.ok(final);
   assert.equal(final.text, 'final answer');
 });
+
+test('runAgentTurn rolls back writes when parse retries are exhausted', async () => {
+  const emitted = [];
+  const rollbackEvents = [];
+
+  const provider = {
+    async chatCompletion() {
+      return {
+        text: '{tool:invalid',
+        finishReason: 'stop',
+        toolCalls: [],
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      };
+    },
+  };
+
+  const parser = {
+    parse() {
+      return { kind: 'parse_error', error: 'invalid json' };
+    },
+  };
+
+  await runAgentTurn({
+    event: { type: 'user:input', channel: 'tui', sessionId: 's2', content: { text: 'hi' } },
+    provider,
+    parser,
+    maxContinuations: 2,
+    retryLimit: 0,
+    compactMessagesForContinuation: async (options) => options,
+    getToolDefinitionsForEvent: () => [],
+    buildInitialContext: async () => ({
+      messages: [{ role: 'user', content: 'hi' }],
+      maxOutputTokens: 128,
+    }),
+    persistInputTurn: async () => {},
+    emitFinal: async () => {
+      throw new Error('final emit not expected');
+    },
+    emitCorrectionFailure: (_event, text) => {
+      emitted.push({ type: 'failure', text });
+    },
+    queueEmit: (event) => {
+      emitted.push(event);
+    },
+    executeToolCall: async () => {
+      throw new Error('tool execution not expected');
+    },
+    createWriteRollback: () => ({
+      hasChanges() {
+        return true;
+      },
+      async restore() {
+        rollbackEvents.push('restored');
+        return 1;
+      },
+    }),
+  });
+
+  assert.deepEqual(rollbackEvents, ['restored']);
+  const rollbackStatus = emitted.find((event) => event.type === 'agent:status' && event.content.phase === 'tool:rollback');
+  assert.ok(rollbackStatus);
+  const failure = emitted.find((event) => event.type === 'failure');
+  assert.ok(failure);
+});
+
+test('runAgentTurn rolls back writes when tool execution exits early', async () => {
+  const rollbackEvents = [];
+
+  await runAgentTurn({
+    event: { type: 'user:input', channel: 'tui', sessionId: 's3', content: { text: 'hi' } },
+    provider: {
+      async chatCompletion() {
+        return {
+          text: '',
+          finishReason: 'tool_calls',
+          toolCalls: [{ id: 'call-1', name: 'write', arguments: { path: 'x.txt', content: 'x' } }],
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        };
+      },
+    },
+    parser: {
+      parse() {
+        return { kind: 'final', text: 'not used' };
+      },
+    },
+    maxContinuations: 2,
+    retryLimit: 1,
+    compactMessagesForContinuation: async (options) => options,
+    getToolDefinitionsForEvent: () => [],
+    buildInitialContext: async () => ({
+      messages: [{ role: 'user', content: 'hi' }],
+      maxOutputTokens: 128,
+    }),
+    persistInputTurn: async () => {},
+    emitFinal: async () => {
+      throw new Error('final emit not expected');
+    },
+    emitCorrectionFailure: () => {},
+    queueEmit: () => {},
+    executeToolCall: async () => ({
+      done: true,
+      toolCalls: 1,
+      correctionRetries: 0,
+    }),
+    createWriteRollback: () => ({
+      hasChanges() {
+        return true;
+      },
+      async restore() {
+        rollbackEvents.push('restored');
+        return 1;
+      },
+    }),
+  });
+
+  assert.deepEqual(rollbackEvents, ['restored']);
+});

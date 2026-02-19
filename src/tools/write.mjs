@@ -53,7 +53,7 @@ export class WriteTool {
     this.#rootDirs = normalizeRootDirs(options);
   }
 
-  async execute(input = {}) {
+  async execute(input = {}, context = {}) {
     const { path: targetPath, content = '', mode = 'overwrite' } = input;
     const { resolvedPath, resolvedRoot } = await resolveSafePath(this.#rootDirs, targetPath, {
       preferExisting: false,
@@ -67,6 +67,11 @@ export class WriteTool {
 
     if (typeof content !== 'string') {
       throw new TypeError('content must be a string.');
+    }
+
+    const rollback = context?.writeRollback;
+    if (rollback && typeof rollback.captureFile === 'function') {
+      await rollback.captureFile(resolvedPath);
     }
 
     await fs.mkdir(path.dirname(resolvedPath), { recursive: true });

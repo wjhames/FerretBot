@@ -13,6 +13,7 @@ export async function executeToolCall(options = {}) {
     retryLimit,
     maxToolCallsPerStep,
     toolRegistry,
+    toolExecutionContext = {},
     queueEmit,
     appendSessionTurn,
     emitCorrectionFailure,
@@ -109,6 +110,7 @@ export async function executeToolCall(options = {}) {
       name: parsedToolCall.toolName,
       arguments: parsedToolCall.arguments,
       event,
+      context: toolExecutionContext,
     });
   } catch (error) {
     const reason = error?.message ?? String(error);
