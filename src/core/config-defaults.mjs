@@ -9,3 +9,5 @@ export const DEFAULT_AGENT_SOCKET_PATH = runtimePaths.socketPath;
 export const DEFAULT_LMSTUDIO_BASE_URL = 'http://192.168.1.7:1234/v1';
 export const DEFAULT_LMSTUDIO_MODEL = 'openai/gpt-oss-20b';
 export const DEFAULT_LMSTUDIO_TIMEOUT_MS = 600_000;
+export const DEFAULT_UNDICI_HEADERS_TIMEOUT_MS = 30 * 60 * 1000;
+export const DEFAULT_UNDICI_CONNECT_TIMEOUT_MS = 60 * 1000;

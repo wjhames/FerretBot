@@ -2,14 +2,15 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Agent as UndiciAgent, setGlobalDispatcher } from 'undici';
 
+import {
+  DEFAULT_UNDICI_CONNECT_TIMEOUT_MS,
+  DEFAULT_UNDICI_HEADERS_TIMEOUT_MS,
+} from './core/config-defaults.mjs';
 import { createAgentLifecycle } from './core/lifecycle.mjs';
 
-const UNDICI_HEADERS_TIMEOUT_MS = 30 * 60 * 1000;
-const UNDICI_CONNECT_TIMEOUT_MS = 60 * 1000;
-
 setGlobalDispatcher(new UndiciAgent({
-  headersTimeout: UNDICI_HEADERS_TIMEOUT_MS,
-  connectTimeout: UNDICI_CONNECT_TIMEOUT_MS,
+  headersTimeout: DEFAULT_UNDICI_HEADERS_TIMEOUT_MS,
+  connectTimeout: DEFAULT_UNDICI_CONNECT_TIMEOUT_MS,
 }));
 
 function isMainModule() {
