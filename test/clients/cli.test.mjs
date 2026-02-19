@@ -143,7 +143,7 @@ test('runCli message prints only assistant response text', async () => {
           onMessage({
             type: 'agent:response',
             clientId: 'client-9',
-            content: { text: 'Hi there' },
+            content: { text: 'Hi there', requestId: payload.content.requestId },
           });
         });
       },
@@ -157,5 +157,45 @@ test('runCli message prints only assistant response text', async () => {
   assert.equal(sent.length, 1);
   assert.equal(sent[0].type, 'user:input');
   assert.equal(stdout.buffer, 'Hi there\n');
+  assert.equal(stderr.buffer, '');
+});
+
+test('runCli message ignores non-matching requestId responses', async () => {
+  const stdout = createCaptureStream();
+  const stderr = createCaptureStream();
+
+  const code = await runCli({
+    argv: ['message', 'Hello'],
+    stdout,
+    stderr,
+    clientFactory: ({ onMessage, onStatus }) => ({
+      connect() {
+        queueMicrotask(() => {
+          onStatus({ type: 'hello', clientId: 'client-22' });
+        });
+      },
+      disconnect() {},
+      send(payload) {
+        queueMicrotask(() => {
+          onMessage({
+            type: 'agent:response',
+            clientId: 'client-22',
+            content: { text: 'stale', requestId: 'req-stale' },
+          });
+          onMessage({
+            type: 'agent:response',
+            clientId: 'client-22',
+            content: { text: 'fresh', requestId: payload.content.requestId },
+          });
+        });
+      },
+      getClientId() {
+        return 'client-22';
+      },
+    }),
+  });
+
+  assert.equal(code, 0);
+  assert.equal(stdout.buffer, 'fresh\n');
   assert.equal(stderr.buffer, '');
 });
