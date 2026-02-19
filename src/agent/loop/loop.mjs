@@ -16,6 +16,15 @@ import { runAgentTurn } from '../turn/runner.mjs';
 const DEFAULT_RETRY_LIMIT = 2;
 const DEFAULT_MAX_CONTINUATIONS = 3;
 
+function getRequestIdFromEvent(event) {
+  const requestId = event?.content?.requestId;
+  if (typeof requestId !== 'string' || requestId.trim().length === 0) {
+    return null;
+  }
+
+  return requestId.trim();
+}
+
 function coerceInputText(event) {
   const { content } = event;
   if (event?.type === WORKFLOW_STEP_START_EVENT) {
@@ -233,6 +242,7 @@ export class AgentLoop {
           content: {
             text: `Agent failed to process request: ${detail}`,
             finishReason: 'internal_error',
+            requestId: getRequestIdFromEvent(event),
           },
         });
       }
@@ -339,6 +349,7 @@ export class AgentLoop {
 
   async #emitFinal(event, completion, text, metadata = {}) {
     const finalText = normalizeFinalText(text);
+    const requestId = getRequestIdFromEvent(event);
     await this.#appendSessionTurn(event.sessionId, {
       role: 'assistant',
       type: 'agent_response',
@@ -357,6 +368,7 @@ export class AgentLoop {
         text: finalText,
         finishReason: completion.finishReason,
         usage: completion.usage,
+        requestId,
       },
     });
 
@@ -379,6 +391,7 @@ export class AgentLoop {
   }
 
   #emitCorrectionFailure(event, text) {
+    const requestId = getRequestIdFromEvent(event);
     this.#queueEmit({
       type: 'agent:response',
       channel: event.channel,
@@ -386,6 +399,7 @@ export class AgentLoop {
       content: {
         text,
         finishReason: 'parse_failed',
+        requestId,
       },
     });
   }
