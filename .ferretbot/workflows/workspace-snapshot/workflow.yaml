@@ -1,0 +1,116 @@
+id: workspace-snapshot
+version: "3.0.0"
+name: Workspace Snapshot
+description: Collect facts, write STATUS.md, and verify accuracy with explicit step contracts.
+steps:
+  - id: collect-facts
+    name: Collect Facts
+    type: agent
+    instruction: |
+      Collect factual project data and write it to facts.md at repository root.
+
+      Required sections in facts.md (exact headings):
+      - ## Facts
+      - ### Branch
+      - ### Git Status
+      - ### Top-Level Layout
+      - ### Test File Sample
+      - ### Scripts
+      - ### Gitignore Node Modules Rule
+
+      Use tools only; do not guess:
+      - branch: git branch --show-current
+      - status: git status --short
+      - layout: list top-level files/dirs
+      - tests: find test -type f | head -n 10
+      - scripts: read package.json and extract scripts
+      - gitignore rule: read .gitignore and determine whether node_modules/ is present
+
+      Requirements:
+      - facts.md must contain only observed facts.
+      - If a command fails, write "unknown" for that field.
+      - Write facts.md using the write tool.
+
+      Return exactly: FACTS_OK
+    tools:
+      - bash
+      - read
+      - write
+    loadSkills: []
+    dependsOn: []
+    successChecks:
+      - type: contains
+        text: FACTS_OK
+      - type: not_contains
+        text: FACTS_FAIL
+    timeout: null
+    retries: 2
+    condition: null
+
+  - id: write-status
+    name: Write STATUS.md
+    type: agent
+    instruction: |
+      Read facts.md and generate STATUS.md at repository root.
+
+      Required headings in STATUS.md (exact):
+      - ## Project Snapshot
+      - ### Branch & Status
+      - ### Top-Level Layout
+      - ### Scripts
+      - ### Risks / Notes
+
+      Rules:
+      - Use only facts from facts.md.
+      - Do not add claims not present in facts.md.
+      - If a fact is missing, say "unknown".
+      - Keep concise and factual.
+
+      Write STATUS.md using the write tool.
+      Return exactly: STATUS_WRITTEN
+    tools:
+      - read
+      - write
+    loadSkills: []
+    dependsOn:
+      - collect-facts
+    successChecks:
+      - type: contains
+        text: STATUS_WRITTEN
+      - type: not_contains
+        text: STATUS_FAIL
+    timeout: null
+    retries: 2
+    condition: null
+
+  - id: verify-status
+    name: Verify STATUS.md
+    type: agent
+    instruction: |
+      Read facts.md and STATUS.md.
+      Verify STATUS.md is consistent with facts.md.
+
+      Minimum checks:
+      - All required STATUS.md headings exist.
+      - Branch matches facts.md branch.
+      - Git clean/dirty statement matches facts.md git status.
+      - STATUS.md does not claim no tests if facts.md test sample contains entries.
+      - STATUS.md does not suggest adding node_modules to .gitignore if facts.md says node_modules/ is present.
+
+      Return exactly one line:
+      - VERIFY_OK
+      OR
+      - VERIFY_FAIL: <reason>
+    tools:
+      - read
+    loadSkills: []
+    dependsOn:
+      - write-status
+    successChecks:
+      - type: contains
+        text: VERIFY_OK
+      - type: not_contains
+        text: VERIFY_FAIL
+    timeout: null
+    retries: 0
+    condition: null

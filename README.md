@@ -60,6 +60,22 @@ npm run cli -- workflow cancel <run-id>
 npm run cli -- workflow list
 ```
 
+## Repo Setup
+
+Before first real use, copy/rename the example files to canonical names and customize:
+
+- `.ferretbot/AGENTS.example.md` -> `.ferretbot/AGENTS.md`
+- `.ferretbot/IDENTITY.example.md` -> `.ferretbot/IDENTITY.md`
+- `.ferretbot/USER.example.md` -> `.ferretbot/USER.md`
+- `.ferretbot/MEMORY.example.md` -> `.ferretbot/MEMORY.md`
+- `.ferretbot/SOUL.example.md` -> `.ferretbot/SOUL.md`
+
+Only `*.example.md` files are tracked for sharing.
+Runtime data is still local-only and gitignored:
+
+- `.ferretbot/sessions/`
+- `.ferretbot/workflow-runs/`
+
 ## Default Paths
 
 - Config: `~/.ferretbot/config.json`
@@ -74,8 +90,7 @@ npm run cli -- workflow list
 - Override workflow root with `workflows.rootDir` in `~/.ferretbot/config.json`.
 - Engine supports `agent` and system file steps.
 - `loadSkills` resolution order: step, then workflow, then global.
-- `.ferretbot/` is gitignored in this repo, so workflow YAML files are local-only by default.
-- To share workflow definitions in git, set `workflows.rootDir` to a tracked path (for example `./workflows`).
+- This repo tracks `.ferretbot/workflows/*` as shareable workflow definitions.
 
 ## Current Status
 

@@ -32,5 +32,15 @@ Thumbs.db
 
 # Agent/local persistence
 .agent/
-.ferretbot/
+.ferretbot/*
+!.ferretbot/*.example.md
+!.ferretbot/workflows/
+!.ferretbot/workflows/**
+.ferretbot/AGENTS.md
+.ferretbot/IDENTITY.md
+.ferretbot/MEMORY.md
+.ferretbot/SOUL.md
+.ferretbot/USER.md
+.ferretbot/sessions/
+.ferretbot/workflow-runs/
 workspace/
