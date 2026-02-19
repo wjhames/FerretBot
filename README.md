@@ -9,9 +9,10 @@ FerretBot is a local-first agent runtime. It runs on your machine, talks to a lo
 - Node.js ESM daemon + terminal CLI client
 - Event-driven core (bus, lifecycle, IPC)
 - Agent loop with tool-call cycle and parser retries
+- Guardrails for empty final responses and unsafe tool usage
 - Token-budgeted context assembly from workspace prompt layers
 - Workflow engine for YAML DAGs with retries/checks
-- Built-in tools: `bash`, `read`, `write`
+- Built-in tools: `bash`, `read`, `write`, `edit`
 - Skills loaded at global, workflow, and step levels
 - Session memory (JSONL) + durable workspace memory
 
@@ -22,7 +23,7 @@ Main subsystems in play:
 - `core/`: event bus, lifecycle wiring, IPC server, config defaults
 - `agent/`: context builder, prompt/bootstrap manager, parser, loop
 - `workflows/`: loader, schema checks, registry, run engine
-- `tools/`: registry + built-ins
+- `tools/`: registry + built-ins (`bash`, `read`, `write`, `edit`)
 - `provider/`: LM Studio adapter behind a provider interface
 - `memory/`: per-session transcripts + workspace file manager
 
@@ -33,6 +34,8 @@ Data path, simplified:
 3. Agent loop builds context, calls provider, parses output.
 4. Tool calls (if any) execute through tool registry, then loop continues.
 5. Final response is persisted and emitted back to client.
+
+For local file mutation tasks, the preferred path is `edit` (targeted in-place operations) instead of whole-file overwrite.
 
 ## Requirements
 
@@ -114,7 +117,7 @@ Runtime data is still local-only and gitignored:
 - Timeout/slow responses:
   Local model generation is slow for requested output. Reduce response size or increase provider timeout.
 - Empty/very short answers:
-  The loop emits a fallback message for empty model output. If frequent, inspect LM Studio model state and prompt/tool context.
+  The loop retries final generation and then returns a structured guardrail failure if output stays empty. If frequent, inspect LM Studio model state and prompt/tool context.
 
 ## Runtime Notes
 
@@ -122,8 +125,22 @@ Runtime data is still local-only and gitignored:
   On malformed tool JSON, the loop sends a correction prompt and retries up to 2 times before returning `parse_failed`.
 - Parse error hints:
   Parser errors include a compact candidate snippet for debugging without excessive context growth.
+- Write safety:
+  Overwriting existing code files requires explicit `rewriteReason`; use `edit` for targeted changes.
+- Command hygiene:
+  Recursive directory dumps like `ls -R` are rejected and retried with correction guidance.
 - Context budgeting:
   Layer budget aliases (`systemPrompt`, `taskScope`, `skillContent`, `priorContext`) are normalized to runtime layer names.
+
+## Edit Tool Operations
+
+`edit` supports targeted in-place updates for existing files:
+
+- `replace_text`
+- `replace_regex`
+- `insert_before`
+- `insert_after`
+- `delete_range`
 
 ## Commands
 
