@@ -115,6 +115,7 @@ const BUILT_IN_TOOLS = [
         path: { type: 'string' },
         content: { type: 'string' },
         mode: { type: 'string' },
+        rewriteReason: { type: 'string' },
       },
       required: ['path'],
       additionalProperties: false,

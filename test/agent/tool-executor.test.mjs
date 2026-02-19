@@ -156,3 +156,85 @@ test('executeToolCall forwards tool execution context into registry execute', as
 
   assert.deepEqual(capturedContext, { writeRollback: { id: 'rollback' } });
 });
+
+test('executeToolCall rejects recursive ls -R command with correction retry', async () => {
+  const messages = [];
+  const emitted = [];
+
+  const result = await executeToolCall({
+    event: { channel: 'tui', sessionId: 's1' },
+    messages,
+    completion: { text: '{"tool":"bash"}', usage: {} },
+    parsedToolCall: {
+      toolName: 'bash',
+      arguments: { command: 'ls -R .' },
+      toolCallId: null,
+      rawAssistantText: '{"tool":"bash"}',
+    },
+    toolCalls: 0,
+    correctionRetries: 0,
+    retryLimit: 2,
+    maxToolCallsPerStep: 3,
+    toolRegistry: {
+      validateCall() {
+        return { valid: true, errors: [] };
+      },
+      async execute() {
+        return { ok: true };
+      },
+    },
+    queueEmit: (event) => emitted.push(event),
+    appendSessionTurn: async () => {},
+    emitCorrectionFailure: () => {},
+  });
+
+  assert.equal(result.done, false);
+  assert.equal(result.correctionRetries, 1);
+  assert.equal(messages.length, 2);
+  assert.match(messages[1].content, /Avoid recursive directory dumps/);
+
+  const status = emitted.find((event) => event.type === 'agent:status');
+  assert.ok(status);
+  assert.equal(status.content.phase, 'validate:retry');
+});
+
+test('executeToolCall rejects code-file overwrite without rewriteReason', async () => {
+  const messages = [];
+  const emitted = [];
+
+  const result = await executeToolCall({
+    event: { channel: 'tui', sessionId: 's1' },
+    messages,
+    completion: { text: '{"tool":"write"}', usage: {} },
+    parsedToolCall: {
+      toolName: 'write',
+      arguments: { path: 'src/agent/loop/loop.mjs', content: 'x', mode: 'overwrite' },
+      toolCallId: null,
+      rawAssistantText: '{"tool":"write"}',
+    },
+    toolCalls: 0,
+    correctionRetries: 0,
+    retryLimit: 2,
+    maxToolCallsPerStep: 3,
+    toolRegistry: {
+      validateCall() {
+        return { valid: true, errors: [] };
+      },
+      async execute() {
+        return { ok: true };
+      },
+    },
+    queueEmit: (event) => emitted.push(event),
+    appendSessionTurn: async () => {},
+    emitCorrectionFailure: () => {},
+  });
+
+  assert.equal(result.done, false);
+  assert.equal(result.correctionRetries, 1);
+  assert.equal(messages.length, 2);
+  assert.match(messages[1].content, /requires a non-empty rewriteReason/);
+
+  const status = emitted.find((event) => event.type === 'agent:status');
+  assert.ok(status);
+  assert.equal(status.content.phase, 'validate:retry');
+});

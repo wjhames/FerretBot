@@ -3,6 +3,37 @@ import path from 'node:path';
 
 import { normalizeRootDirs, resolveSafePath } from './read.mjs';
 
+const CODE_FILE_EXTENSIONS = new Set([
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.py',
+  '.java',
+  '.go',
+  '.rs',
+  '.cpp',
+  '.cc',
+  '.c',
+  '.h',
+  '.hpp',
+  '.cs',
+  '.php',
+  '.rb',
+  '.swift',
+  '.kt',
+  '.kts',
+  '.scala',
+  '.sh',
+  '.sql',
+  '.yaml',
+  '.yml',
+  '.json',
+  '.toml',
+]);
+
 function normalizeMode(mode) {
   if (mode == null) {
     return 'overwrite';
@@ -54,7 +85,12 @@ export class WriteTool {
   }
 
   async execute(input = {}, context = {}) {
-    const { path: targetPath, content = '', mode = 'overwrite' } = input;
+    const {
+      path: targetPath,
+      content = '',
+      mode = 'overwrite',
+      rewriteReason = null,
+    } = input;
     const { resolvedPath, resolvedRoot } = await resolveSafePath(this.#rootDirs, targetPath, {
       preferExisting: false,
     });
@@ -67,6 +103,21 @@ export class WriteTool {
 
     if (typeof content !== 'string') {
       throw new TypeError('content must be a string.');
+    }
+    const reasonProvided = typeof rewriteReason === 'string' && rewriteReason.trim().length > 0;
+
+    let existedBefore = false;
+    try {
+      await fs.access(resolvedPath);
+      existedBefore = true;
+    } catch {
+      existedBefore = false;
+    }
+
+    const extension = path.extname(resolvedPath).toLowerCase();
+    const isCodeFile = CODE_FILE_EXTENSIONS.has(extension);
+    if (normalizedMode === 'overwrite' && existedBefore && isCodeFile && !reasonProvided) {
+      throw new Error('Overwriting existing code files requires rewriteReason.');
     }
 
     const rollback = context?.writeRollback;
@@ -89,6 +140,9 @@ export class WriteTool {
       bytesWritten: Buffer.byteLength(content, 'utf8'),
       size: stats.size,
       mode: normalizedMode,
+      existedBefore,
+      isCodeFile,
+      rewriteReasonProvided: reasonProvided,
     };
   }
 }

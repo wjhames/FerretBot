@@ -1,5 +1,78 @@
 import { buildCorrectionPrompt } from './policy.mjs';
 
+const CODE_FILE_EXTENSIONS = new Set([
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.py',
+  '.java',
+  '.go',
+  '.rs',
+  '.cpp',
+  '.cc',
+  '.c',
+  '.h',
+  '.hpp',
+  '.cs',
+  '.php',
+  '.rb',
+  '.swift',
+  '.kt',
+  '.kts',
+  '.scala',
+  '.sh',
+  '.sql',
+  '.yaml',
+  '.yml',
+  '.json',
+  '.toml',
+]);
+
+function looksLikeCodePath(targetPath) {
+  if (typeof targetPath !== 'string' || targetPath.trim().length === 0) {
+    return false;
+  }
+
+  const normalized = targetPath.trim().toLowerCase();
+  const dotIndex = normalized.lastIndexOf('.');
+  if (dotIndex < 0) {
+    return false;
+  }
+
+  return CODE_FILE_EXTENSIONS.has(normalized.slice(dotIndex));
+}
+
+function validateToolPolicy(parsedToolCall) {
+  if (!parsedToolCall || typeof parsedToolCall !== 'object') {
+    return null;
+  }
+
+  if (parsedToolCall.toolName === 'bash') {
+    const command = String(parsedToolCall.arguments?.command ?? '');
+    if (/\bls\s+-R\b/.test(command)) {
+      return 'Avoid recursive directory dumps (ls -R). Use targeted reads/listing.';
+    }
+  }
+
+  if (parsedToolCall.toolName === 'write') {
+    const mode = String(parsedToolCall.arguments?.mode ?? 'overwrite').trim().toLowerCase();
+    const rewriteReason = parsedToolCall.arguments?.rewriteReason;
+    const targetPath = parsedToolCall.arguments?.path;
+    if (
+      mode === 'overwrite'
+      && looksLikeCodePath(targetPath)
+      && (typeof rewriteReason !== 'string' || rewriteReason.trim().length === 0)
+    ) {
+      return 'Overwriting existing code files requires a non-empty rewriteReason.';
+    }
+  }
+
+  return null;
+}
+
 export async function executeToolCall(options = {}) {
   const {
     event,
@@ -35,6 +108,12 @@ export async function executeToolCall(options = {}) {
           arguments: parsedToolCall.arguments,
         })
       : { valid: true, errors: [] };
+  const policyViolation = validateToolPolicy(parsedToolCall);
+  if (policyViolation) {
+    const existing = Array.isArray(validation.errors) ? validation.errors : [];
+    validation.valid = false;
+    validation.errors = [...existing, policyViolation];
+  }
 
   if (!validation.valid) {
     const reason = validation.errors?.join(' ') || 'Invalid tool call.';
