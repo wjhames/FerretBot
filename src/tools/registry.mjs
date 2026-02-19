@@ -1,4 +1,5 @@
 import { createBashTool } from './bash.mjs';
+import { createEditTool } from './edit.mjs';
 import { createPatchTool } from './patch.mjs';
 import { createReadTool } from './read.mjs';
 import { createWriteTool } from './write.mjs';
@@ -105,6 +106,33 @@ const BUILT_IN_TOOLS = [
       rootDir: options.rootDir,
       rootDirs: options.rootDirs,
       maxBytes: options.maxReadBytes,
+    }),
+  },
+  {
+    name: 'edit',
+    description: 'Edit existing files in-place using targeted operations.',
+    schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        operation: { type: 'string' },
+        search: { type: 'string' },
+        replace: { type: 'string' },
+        all: { type: 'boolean' },
+        pattern: { type: 'string' },
+        flags: { type: 'string' },
+        marker: { type: 'string' },
+        text: { type: 'string' },
+        occurrence: { type: 'string' },
+        startLine: { type: 'integer' },
+        endLine: { type: 'integer' },
+      },
+      required: ['path', 'operation'],
+      additionalProperties: false,
+    },
+    create: (options) => createEditTool({
+      rootDir: options.rootDir,
+      rootDirs: options.rootDirs,
     }),
   },
   {
