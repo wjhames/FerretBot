@@ -3,6 +3,7 @@ import {
   deriveOutputReserve,
   createAgentContext,
 } from '../context/manager.mjs';
+import { DEFAULT_LMSTUDIO_TIMEOUT_MS } from '../../core/config-defaults.mjs';
 import { buildSystemPrompt } from '../prompt.mjs';
 import {
   DEFAULT_PROCESSABLE_EVENTS,
@@ -15,7 +16,7 @@ import { runAgentTurn } from '../turn/runner.mjs';
 
 const DEFAULT_RETRY_LIMIT = 2;
 const DEFAULT_MAX_CONTINUATIONS = 3;
-const DEFAULT_TURN_TIMEOUT_MS = 180_000;
+const DEFAULT_TURN_TIMEOUT_MS = DEFAULT_LMSTUDIO_TIMEOUT_MS;
 
 function getRequestIdFromEvent(event) {
   const requestId = event?.content?.requestId;
