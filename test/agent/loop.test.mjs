@@ -249,6 +249,45 @@ test('loop emits internal error response when turn handling throws unexpectedly'
   assert.match(responseEvent.content.text, /provider exploded/);
 });
 
+test('loop propagates requestId to message responses', async () => {
+  const bus = createEventBus();
+  const emitted = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  const loop = createAgentLoop({
+    bus,
+    provider: createSequencedProvider(['request tracked']),
+    parser: {
+      parse(text) {
+        return { kind: 'final', text };
+      },
+    },
+    maxTokens: 128,
+  });
+
+  loop.start();
+
+  await bus.emit({
+    type: 'user:input',
+    channel: 'tui',
+    sessionId: 's-request',
+    content: {
+      text: 'hello',
+      requestId: 'req-123',
+    },
+  });
+
+  await waitFor(() => emitted.some((event) => event.type === 'agent:response'));
+  loop.stop();
+
+  const responseEvent = emitted.find((event) => event.type === 'agent:response');
+  assert.ok(responseEvent);
+  assert.equal(responseEvent.content.requestId, 'req-123');
+});
+
 test('loop continues generation when model hits token limit', async () => {
   const bus = createEventBus();
   const emitted = [];
