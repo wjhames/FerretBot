@@ -1,5 +1,5 @@
 id: workspace-snapshot
-version: "6.1.0"
+version: "6.2.0"
 name: Repo Action Plan
 description: Build an evidence-based, executable action plan from repository signals using small deterministic steps.
 
@@ -33,8 +33,20 @@ steps:
     name: Capture Branch
     type: agent
     instruction: |
-      Run `git branch --show-current` and write only the observed value (or `unknown` if it fails)
-      to `.ferretbot/.tmp/workflow-artifacts/repo/branch.txt`.
+      Execute exactly one command: `git branch --show-current`.
+
+      Write exactly one file:
+      - `.ferretbot/.tmp/workflow-artifacts/repo/branch.txt`
+
+      File content rules:
+      - Write only the observed branch name.
+      - If command execution fails, write `unknown`.
+      - No prose, no markdown, no extra lines.
+
+      Path contract:
+      - Use the exact literal path shown above.
+      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
+      - Do not create or write any other files.
     tools:
       - bash
       - write
@@ -56,8 +68,20 @@ steps:
     name: Capture Git Status
     type: agent
     instruction: |
-      Run `git status --short` and write only the observed output (or `unknown` if it fails)
-      to `.ferretbot/.tmp/workflow-artifacts/repo/git-status.txt`.
+      Execute exactly one command: `git status --short`.
+
+      Write exactly one file:
+      - `.ferretbot/.tmp/workflow-artifacts/repo/git-status.txt`
+
+      File content rules:
+      - Write only observed command output.
+      - If command execution fails, write `unknown`.
+      - If output is empty, write an empty file (do not invent text).
+
+      Path contract:
+      - Use the exact literal path shown above.
+      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
+      - Do not create or write any other files.
     tools:
       - bash
       - write
@@ -76,8 +100,20 @@ steps:
     name: Capture Top-Level Layout
     type: agent
     instruction: |
-      Run `ls -1` and write only the observed output (or `unknown` if it fails)
-      to `.ferretbot/.tmp/workflow-artifacts/repo/top-level-layout.txt`.
+      Execute exactly one command: `ls -1`.
+
+      Write exactly one file:
+      - `.ferretbot/.tmp/workflow-artifacts/repo/top-level-layout.txt`
+
+      File content rules:
+      - Write only observed command output.
+      - If command execution fails, write `unknown`.
+      - No prose, no markdown.
+
+      Path contract:
+      - Use the exact literal path shown above.
+      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
+      - Do not create or write any other files.
     tools:
       - bash
       - write
@@ -99,8 +135,20 @@ steps:
     name: Capture Workflow Inventory
     type: agent
     instruction: |
-      Run `ls -1 .ferretbot/workflows` and write only the observed output (or `unknown` if it fails)
-      to `.ferretbot/.tmp/workflow-artifacts/repo/workflow-inventory.txt`.
+      Execute exactly one command: `ls -1 .ferretbot/workflows`.
+
+      Write exactly one file:
+      - `.ferretbot/.tmp/workflow-artifacts/repo/workflow-inventory.txt`
+
+      File content rules:
+      - Write only observed command output.
+      - If command execution fails, write `unknown`.
+      - No prose, no markdown.
+
+      Path contract:
+      - Use the exact literal path shown above.
+      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
+      - Do not create or write any other files.
     tools:
       - bash
       - write
@@ -122,20 +170,30 @@ steps:
     name: Write Repo State
     type: agent
     instruction: |
+      Write exactly one file:
+      - `.ferretbot/.tmp/workflow-artifacts/repo-state.md`
+
       Read these files:
       - `.ferretbot/.tmp/workflow-artifacts/repo/branch.txt`
       - `.ferretbot/.tmp/workflow-artifacts/repo/git-status.txt`
       - `.ferretbot/.tmp/workflow-artifacts/repo/top-level-layout.txt`
       - `.ferretbot/.tmp/workflow-artifacts/repo/workflow-inventory.txt`
 
-      Write `.ferretbot/.tmp/workflow-artifacts/repo-state.md` with exact headings:
+      Required headings (exact):
       - ## Repo State
       - ### Branch
       - ### Git Status
       - ### Top-Level Layout
       - ### Workflow Inventory
 
-      Do not run bash here. Only assemble from files above.
+      Tool constraints:
+      - Do not run bash.
+      - Use only the read files above as source evidence.
+
+      Path contract:
+      - Use the exact literal output path shown above.
+      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
+      - Do not create or write any other files.
     tools:
       - read
       - write
@@ -166,7 +224,10 @@ steps:
     name: Capture Test Signal
     type: agent
     instruction: |
-      Run `npm test` once and write `.ferretbot/.tmp/workflow-artifacts/test-signal.md`.
+      Execute exactly one command: `npm test`.
+
+      Write exactly one file:
+      - `.ferretbot/.tmp/workflow-artifacts/test-signal.md`
 
       Required headings:
       - ## Test Signal
@@ -178,6 +239,12 @@ steps:
       - Use observed command output only.
       - Include short key output excerpt (stdout/stderr summary).
       - If command fails to run, record exit code and reason.
+      - Do not run additional commands.
+
+      Path contract:
+      - Use the exact literal output path shown above.
+      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
+      - Do not create or write any other files.
     tools:
       - bash
       - write
@@ -202,7 +269,10 @@ steps:
     name: Capture Package Signal
     type: agent
     instruction: |
-      Read `package.json` and write `.ferretbot/.tmp/workflow-artifacts/package-signal.md`.
+      Read exactly one input file: `package.json`.
+
+      Write exactly one file:
+      - `.ferretbot/.tmp/workflow-artifacts/package-signal.md`
 
       Required headings:
       - ## Package Signal
@@ -213,6 +283,12 @@ steps:
       Rules:
       - Use observed values only.
       - If a field is absent, write "none".
+      - Do not run bash commands.
+
+      Path contract:
+      - Use the exact literal output path shown above.
+      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
+      - Do not create or write any other files.
     tools:
       - read
       - write
@@ -237,13 +313,14 @@ steps:
     name: Build Action Plan
     type: agent
     instruction: |
+      Write exactly one file:
+      - `ACTION_PLAN.md`
+
       Read:
       - `.ferretbot/.tmp/workflow-artifacts/repo-state.md`
       - `.ferretbot/.tmp/workflow-artifacts/test-signal.md`
       - `.ferretbot/.tmp/workflow-artifacts/package-signal.md`
       - `.ferretbot/.tmp/workflow-artifacts/context.md`
-
-      Write `ACTION_PLAN.md` at repository root.
 
       Required headings (exact):
       - ## Action Plan
@@ -259,6 +336,11 @@ steps:
         - change target (file/module)
         - command to verify
       - Actions must be concrete and executable.
+      - Do not run bash commands.
+
+      Path contract:
+      - Use the exact literal output path shown above.
+      - Do not create or write any other files.
     tools:
       - read
       - write
@@ -287,7 +369,10 @@ steps:
     name: Verify Plan
     type: agent
     instruction: |
-      Verify `ACTION_PLAN.md` against all workflow artifacts and write `.ferretbot/.tmp/workflow-artifacts/verification.txt`.
+      Read `ACTION_PLAN.md` and all workflow artifacts, then verify consistency.
+
+      Write exactly one file:
+      - `.ferretbot/.tmp/workflow-artifacts/verification.txt`
 
       Write exactly one line:
       - VERIFY_OK
@@ -299,6 +384,11 @@ steps:
       - Exactly 3 actions are present.
       - Every action references observed evidence from artifacts.
       - Every action includes a concrete verification command.
+
+      Path contract:
+      - Use the exact literal output path shown above.
+      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
+      - Do not create or write any other files.
     tools:
       - read
       - write
