@@ -328,6 +328,7 @@ export class AgentLifecycle {
       outputReserve: config.agent?.outputReserve,
       layerBudgets: config.agent?.layerBudgets,
       maxToolCallsPerStep: config.agent?.maxToolCallsPerStep,
+      turnTimeoutMs: config.agent?.turnTimeoutMs,
     });
 
     if (typeof agentLoop.start !== 'function' || typeof agentLoop.stop !== 'function') {

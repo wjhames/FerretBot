@@ -17,6 +17,17 @@ function createOrderRecorder() {
   };
 }
 
+async function waitFor(predicate, { timeoutMs = 1200, intervalMs = 10 } = {}) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error('Timed out waiting for condition.');
+}
+
 test('lifecycle start/shutdown follows expected orchestration order', async () => {
   const recorder = createOrderRecorder();
   const signalSource = new EventEmitter();
@@ -449,4 +460,212 @@ test('lifecycle passes discovered provider context window into agent loop config
 
   assert.ok(capturedLoopConfig);
   assert.equal(capturedLoopConfig.contextLimit, 8192);
+});
+
+test('integration: lifecycle processes normal request over in-process bus path', async () => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ferretbot-int-'));
+  const lifecycle = createAgentLifecycle({
+    loadConfig: async () => ({
+      provider: { preflight: false },
+      workspace: { path: stateDir },
+      memory: { sessionsDir: path.join(stateDir, 'sessions') },
+      workflows: { runsDir: path.join(stateDir, 'runs'), rootDir: path.join(stateDir, 'workflows') },
+    }),
+    createProvider: () => ({
+      async chatCompletion() {
+        return {
+          text: 'integration ok',
+          toolCalls: [],
+          finishReason: 'stop',
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        };
+      },
+    }),
+    createIpcServer: ({ bus }) => ({
+      async start() {
+        this.unsubscribe = bus.on('*', async () => {});
+      },
+      async stopAccepting() {},
+      async disconnectAllClients() {
+        this.unsubscribe?.();
+        this.unsubscribe = null;
+      },
+    }),
+  });
+
+  try {
+    const runtime = await lifecycle.start();
+    const responses = [];
+    runtime.bus.on('agent:response', async (event) => {
+      responses.push(event);
+    });
+
+    await runtime.bus.emit({
+      type: 'user:input',
+      channel: 'ipc',
+      sessionId: 'client-1',
+      content: { text: 'hello', requestId: 'req-normal' },
+    });
+
+    await waitFor(() => responses.some((event) => event.content?.requestId === 'req-normal'));
+    const response = responses.find((event) => event.content?.requestId === 'req-normal');
+    assert.equal(response.content.text, 'integration ok');
+  } finally {
+    await lifecycle.shutdown('test');
+    await fs.rm(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('integration: lifecycle parse-retry path recovers', async () => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ferretbot-int-'));
+  let calls = 0;
+  const lifecycle = createAgentLifecycle({
+    loadConfig: async () => ({
+      provider: { preflight: false },
+      workspace: { path: stateDir },
+      memory: { sessionsDir: path.join(stateDir, 'sessions') },
+      workflows: { runsDir: path.join(stateDir, 'runs'), rootDir: path.join(stateDir, 'workflows') },
+    }),
+    createProvider: () => ({
+      async chatCompletion() {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            text: '{tool:bad',
+            toolCalls: [],
+            finishReason: 'stop',
+            usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+          };
+        }
+        return {
+          text: 'recovered',
+          toolCalls: [],
+          finishReason: 'stop',
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        };
+      },
+    }),
+    createIpcServer: ({ bus }) => ({
+      async start() {
+        this.unsubscribe = bus.on('*', async () => {});
+      },
+      async stopAccepting() {},
+      async disconnectAllClients() {
+        this.unsubscribe?.();
+      },
+    }),
+  });
+
+  try {
+    const runtime = await lifecycle.start();
+    const responses = [];
+    runtime.bus.on('agent:response', async (event) => {
+      responses.push(event);
+    });
+
+    await runtime.bus.emit({
+      type: 'user:input',
+      channel: 'ipc',
+      sessionId: 'client-2',
+      content: { text: 'retry', requestId: 'req-retry' },
+    });
+
+    await waitFor(() => responses.some((event) => event.content?.requestId === 'req-retry'));
+    const response = responses.find((event) => event.content?.requestId === 'req-retry');
+    assert.equal(response.content.text, 'recovered');
+    assert.equal(calls, 2);
+  } finally {
+    await lifecycle.shutdown('test');
+    await fs.rm(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('integration: lifecycle timeout path and restart recovery', async () => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ferretbot-int-'));
+  const ipcStub = ({ bus }) => ({
+    async start() {
+      this.unsubscribe = bus.on('*', async () => {});
+    },
+    async stopAccepting() {},
+    async disconnectAllClients() {
+      this.unsubscribe?.();
+    },
+  });
+
+  const first = createAgentLifecycle({
+    loadConfig: async () => ({
+      provider: { preflight: false },
+      agent: { turnTimeoutMs: 40 },
+      workspace: { path: stateDir },
+      memory: { sessionsDir: path.join(stateDir, 'sessions') },
+      workflows: { runsDir: path.join(stateDir, 'runs'), rootDir: path.join(stateDir, 'workflows') },
+    }),
+    createProvider: () => ({
+      async chatCompletion() {
+        return new Promise(() => {});
+      },
+    }),
+    createIpcServer: ipcStub,
+  });
+
+  const second = createAgentLifecycle({
+    loadConfig: async () => ({
+      provider: { preflight: false },
+      workspace: { path: stateDir },
+      memory: { sessionsDir: path.join(stateDir, 'sessions') },
+      workflows: { runsDir: path.join(stateDir, 'runs'), rootDir: path.join(stateDir, 'workflows') },
+    }),
+    createProvider: () => ({
+      async chatCompletion() {
+        return {
+          text: 'after restart',
+          toolCalls: [],
+          finishReason: 'stop',
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        };
+      },
+    }),
+    createIpcServer: ipcStub,
+  });
+
+  try {
+    const runtime1 = await first.start();
+    const firstResponses = [];
+    runtime1.bus.on('agent:response', async (event) => {
+      firstResponses.push(event);
+    });
+    await runtime1.bus.emit({
+      type: 'user:input',
+      channel: 'ipc',
+      sessionId: 'client-timeout',
+      content: { text: 'hang', requestId: 'req-timeout' },
+    });
+    await waitFor(
+      () => firstResponses.some((event) => event.content?.requestId === 'req-timeout'),
+      { timeoutMs: 1800 },
+    );
+    const timeoutResponse = firstResponses.find((event) => event.content?.requestId === 'req-timeout');
+    assert.equal(timeoutResponse.content.finishReason, 'internal_error');
+    assert.match(timeoutResponse.content.text, /timed out/i);
+    await first.shutdown('test');
+
+    const runtime2 = await second.start();
+    const secondResponses = [];
+    runtime2.bus.on('agent:response', async (event) => {
+      secondResponses.push(event);
+    });
+    await runtime2.bus.emit({
+      type: 'user:input',
+      channel: 'ipc',
+      sessionId: 'client-timeout',
+      content: { text: 'work', requestId: 'req-after-restart' },
+    });
+    await waitFor(() => secondResponses.some((event) => event.content?.requestId === 'req-after-restart'));
+    const okResponse = secondResponses.find((event) => event.content?.requestId === 'req-after-restart');
+    assert.equal(okResponse.content.text, 'after restart');
+  } finally {
+    await first.shutdown('test');
+    await second.shutdown('test');
+    await fs.rm(stateDir, { recursive: true, force: true });
+  }
 });
