@@ -80,3 +80,44 @@ test('executeToolCall stops with tool_limit when cap exceeded', async () => {
   assert.ok(response);
   assert.equal(response.content.finishReason, 'tool_limit');
 });
+
+test('executeToolCall retries when tool execution throws', async () => {
+  const messages = [];
+  const emitted = [];
+
+  const result = await executeToolCall({
+    event: { channel: 'tui', sessionId: 's1' },
+    messages,
+    completion: { text: '{"tool":"write"}', usage: {} },
+    parsedToolCall: {
+      toolName: 'write',
+      arguments: { path: '\\.ferretbot/file.txt', content: '' },
+      toolCallId: null,
+      rawAssistantText: '{"tool":"write"}',
+    },
+    toolCalls: 0,
+    correctionRetries: 0,
+    retryLimit: 2,
+    maxToolCallsPerStep: 3,
+    toolRegistry: {
+      validateCall() {
+        return { valid: true, errors: [] };
+      },
+      async execute() {
+        throw new Error('Path cannot start with a backslash.');
+      },
+    },
+    queueEmit: (event) => emitted.push(event),
+    appendSessionTurn: async () => {},
+    emitCorrectionFailure: () => {},
+  });
+
+  assert.equal(result.done, false);
+  assert.equal(result.toolCalls, 1);
+  assert.equal(result.correctionRetries, 1);
+  assert.equal(messages.length, 2);
+
+  const status = emitted.find((event) => event.type === 'agent:status' && event.content.phase === 'tool:retry');
+  assert.ok(status);
+  assert.equal(status.content.phase, 'tool:retry');
+});
