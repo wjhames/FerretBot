@@ -302,7 +302,7 @@ test('lifecycle default tool registry registers built-in tools', async () => {
   assert.equal(runtime.toolRegistry.has('read'), true);
   assert.equal(runtime.toolRegistry.has('write'), true);
   const toolNames = runtime.toolRegistry.list().map((tool) => tool.name).sort();
-  assert.deepEqual(toolNames, ['bash', 'edit', 'patch', 'read', 'write']);
+  assert.deepEqual(toolNames, ['bash', 'edit', 'read', 'write']);
 
   await lifecycle.shutdown('test');
 });
