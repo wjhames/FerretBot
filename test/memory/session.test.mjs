@@ -105,3 +105,36 @@ test('excludes tool call/result entries from collected conversation', async () =
     ['user_input', 'agent_response'],
   );
 });
+
+test('readTurns warns when malformed JSONL lines are present', async () => {
+  const warned = [];
+  const baseDir = path.join(FIXTURE_ROOT, 'malformed-lines');
+  const memory = new SessionMemory({
+    baseDir,
+    logger: {
+      warn(...args) {
+        warned.push(args);
+      },
+    },
+  });
+
+  await fs.mkdir(baseDir, { recursive: true });
+  await fs.writeFile(
+    path.join(baseDir, 'session-bad.jsonl'),
+    [
+      '{"timestamp":1,"role":"user","type":"user_input","content":"hello","meta":{}}',
+      '{bad-json',
+      '{"timestamp":2,"role":"assistant","type":"agent_response","content":"world","meta":{}}',
+      '',
+    ].join('\n'),
+    'utf-8',
+  );
+
+  const turns = await memory.readTurns('session-bad');
+
+  assert.equal(turns.length, 2);
+  assert.equal(warned.length, 1);
+  assert.equal(warned[0][0], 'Session memory encountered malformed JSONL entries.');
+  assert.equal(warned[0][1].sessionId, 'session-bad');
+  assert.equal(warned[0][1].malformedCount, 1);
+});
