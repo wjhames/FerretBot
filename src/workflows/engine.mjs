@@ -10,6 +10,7 @@ const RUN_STATE = {
   running: 'running',
   completed: 'completed',
   failed: 'failed',
+  blocked: 'blocked',
   cancelled: 'cancelled',
 };
 
@@ -59,14 +60,26 @@ function createRunRecord(id, workflow, args) {
       id: step.id,
       state: STEP_STATE.pending,
       result: null,
+      resultMeta: null,
       startedAt: null,
       completedAt: null,
       retryCount: 0,
+      attemptCount: 0,
+      lastFailureHash: null,
       checkResults: null,
     })),
+    failure: null,
     createdAt: formatIsoNow(),
     updatedAt: formatIsoNow(),
   };
+}
+
+function stableStringify(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value ?? '');
+  }
 }
 
 export class WorkflowEngine {
@@ -138,6 +151,7 @@ export class WorkflowEngine {
     if (!run) throw new Error(`run ${runId} not found.`);
 
     run.state = RUN_STATE.cancelled;
+    run.failure = null;
     run.updatedAt = formatIsoNow();
     await this.#persistRun(run);
 
@@ -160,7 +174,10 @@ export class WorkflowEngine {
   async #handleStepComplete(event) {
     const runId = event?.content?.runId;
     const stepId = event?.content?.stepId;
-    const result = event?.content?.result ?? '';
+    const resultText = event?.content?.resultText ?? event?.content?.result ?? '';
+    const toolResults = Array.isArray(event?.content?.toolResults) ? event.content.toolResults : [];
+    const toolCalls = Array.isArray(event?.content?.toolCalls) ? event.content.toolCalls : [];
+    const artifacts = Array.isArray(event?.content?.artifacts) ? event.content.artifacts : [];
 
     const run = this.#runs.get(runId);
     if (!run) return;
@@ -176,14 +193,16 @@ export class WorkflowEngine {
       run,
       runStep,
       workflowStep,
-      result,
-      toolResults: [],
+      resultText,
+      toolResults,
+      toolCalls,
+      artifacts,
       emitStepCompleteEvent: false,
     });
   }
 
   async #advance(run) {
-    if (run.state === RUN_STATE.cancelled || run.state === RUN_STATE.failed) return;
+    if (run.state === RUN_STATE.cancelled || run.state === RUN_STATE.failed || run.state === RUN_STATE.blocked) return;
 
     const workflow = this.#registry.get(run.workflowId, run.workflowVersion);
     if (!workflow) return;
@@ -192,6 +211,7 @@ export class WorkflowEngine {
     if (!nextStep) {
       if (this.#isRunComplete(run)) {
         run.state = RUN_STATE.completed;
+        run.failure = null;
         run.updatedAt = formatIsoNow();
         await this.#persistRun(run);
         await this.#bus.emit({
@@ -234,7 +254,8 @@ export class WorkflowEngine {
   }
 
   async #executeSystemStep(run, workflowStep, runStep) {
-    let result = '';
+    let resultText = '';
+    let artifacts = [];
     let failedReason = '';
 
     try {
@@ -248,13 +269,16 @@ export class WorkflowEngine {
 
       if (type === 'system_write_file') {
         await this.#workspaceManager.writeTextFile(stepPath, String(content));
-        result = `Wrote ${stepPath}`;
+        resultText = `Wrote ${stepPath}`;
+        artifacts = [String(stepPath)];
       } else if (type === 'system_ensure_file') {
         await this.#workspaceManager.ensureTextFile(stepPath, String(content));
-        result = `Ensured ${stepPath}`;
+        resultText = `Ensured ${stepPath}`;
+        artifacts = [String(stepPath)];
       } else if (type === 'system_delete_file') {
         await this.#workspaceManager.removePath(stepPath);
-        result = `Deleted ${stepPath}`;
+        resultText = `Deleted ${stepPath}`;
+        artifacts = [String(stepPath)];
       } else {
         throw new Error(`Unsupported system step type '${type}'.`);
       }
@@ -263,15 +287,12 @@ export class WorkflowEngine {
     }
 
     if (failedReason) {
-      runStep.state = STEP_STATE.failed;
-      runStep.result = failedReason;
-      runStep.completedAt = formatIsoNow();
-      run.state = RUN_STATE.failed;
-      run.updatedAt = formatIsoNow();
-      await this.#persistRun(run);
-      await this.#bus.emit({
-        type: 'workflow:run:complete',
-        content: { runId: run.id, workflowId: run.workflowId, state: RUN_STATE.failed },
+      await this.#failRun({
+        run,
+        runStep,
+        state: RUN_STATE.failed,
+        code: 'tool_error',
+        message: failedReason,
       });
       return;
     }
@@ -280,8 +301,10 @@ export class WorkflowEngine {
       run,
       runStep,
       workflowStep,
-      result,
+      resultText,
       toolResults: [],
+      toolCalls: [],
+      artifacts,
       emitStepCompleteEvent: true,
     });
   }
@@ -290,14 +313,18 @@ export class WorkflowEngine {
     run,
     runStep,
     workflowStep,
-    result,
+    resultText,
     toolResults = [],
+    toolCalls = [],
+    artifacts = [],
     emitStepCompleteEvent = false,
   }) {
+    runStep.attemptCount += 1;
     const checks = workflowStep?.successChecks ?? [];
 
+    const normalizedResultText = String(resultText ?? '');
     const checkResult = await evaluateChecks(checks, {
-      stepOutput: result,
+      stepOutput: normalizedResultText,
       toolResults,
       workflowInputs: run.args,
       stepResults: this.#buildStepResults(run),
@@ -307,7 +334,13 @@ export class WorkflowEngine {
 
     if (checkResult.passed) {
       runStep.state = STEP_STATE.completed;
-      runStep.result = result;
+      runStep.result = normalizedResultText;
+      runStep.resultMeta = {
+        toolCalls,
+        toolResults,
+        artifacts,
+      };
+      runStep.lastFailureHash = null;
       runStep.completedAt = formatIsoNow();
       run.updatedAt = formatIsoNow();
       await this.#persistRun(run);
@@ -318,7 +351,11 @@ export class WorkflowEngine {
           content: {
             runId: run.id,
             stepId: runStep.id,
-            result,
+            result: normalizedResultText,
+            resultText: normalizedResultText,
+            toolCalls,
+            toolResults,
+            artifacts,
           },
         });
       }
@@ -326,6 +363,23 @@ export class WorkflowEngine {
       await this.#advance(run);
       return;
     }
+
+    const failureHash = stableStringify({
+      resultText: normalizedResultText,
+      toolResults,
+      artifacts,
+    });
+    if (runStep.lastFailureHash === failureHash) {
+      await this.#failRun({
+        run,
+        runStep,
+        state: RUN_STATE.blocked,
+        code: 'no_progress',
+        message: `step '${runStep.id}' repeated identical failed output.`,
+      });
+      return;
+    }
+    runStep.lastFailureHash = failureHash;
 
     if (runStep.retryCount < (workflowStep?.retries ?? 0)) {
       runStep.retryCount += 1;
@@ -336,14 +390,36 @@ export class WorkflowEngine {
       return;
     }
 
+    await this.#failRun({
+      run,
+      runStep,
+      state: RUN_STATE.failed,
+      code: 'check_failed',
+      message: `step '${runStep.id}' failed successChecks.`,
+    });
+  }
+
+  async #failRun({
+    run,
+    runStep,
+    state = RUN_STATE.failed,
+    code,
+    message,
+  }) {
     runStep.state = STEP_STATE.failed;
     runStep.completedAt = formatIsoNow();
-    run.state = RUN_STATE.failed;
+    run.state = state;
+    run.failure = {
+      code,
+      message,
+      stepId: runStep.id,
+      attempts: runStep.attemptCount,
+    };
     run.updatedAt = formatIsoNow();
     await this.#persistRun(run);
     await this.#bus.emit({
       type: 'workflow:run:complete',
-      content: { runId: run.id, workflowId: run.workflowId, state: RUN_STATE.failed },
+      content: { runId: run.id, workflowId: run.workflowId, state: run.state },
     });
   }
 

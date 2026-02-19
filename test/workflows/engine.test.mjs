@@ -263,6 +263,90 @@ test('successChecks pass after retry', async () => {
   });
 });
 
+test('repeated identical failed output blocks the run as no_progress', async () => {
+  await withTempDir(async (storageDir) => {
+    const bus = new FakeBus();
+    const wf = makeWorkflow({
+      steps: [
+        {
+          id: 's1',
+          name: 's1',
+          instruction: 'do it',
+          tools: ['bash'],
+          loadSkills: [],
+          dependsOn: [],
+          successChecks: [{ type: 'contains', text: 'SUCCESS' }],
+          retries: 3,
+        },
+      ],
+    });
+    const registry = makeRegistry([wf]);
+    const engine = createWorkflowEngine({ bus, registry, storageDir });
+    engine.start();
+
+    const run = await engine.startRun('test-wf');
+    await bus.emit({
+      type: 'workflow:step:complete',
+      content: { runId: run.id, stepId: 's1', resultText: 'same-failure', result: 'same-failure' },
+    });
+
+    await waitFor(() => bus.eventsOfType('workflow:step:start').length >= 2);
+    await bus.emit({
+      type: 'workflow:step:complete',
+      content: { runId: run.id, stepId: 's1', resultText: 'same-failure', result: 'same-failure' },
+    });
+
+    await waitFor(() => run.state === 'blocked');
+    assert.equal(run.failure?.code, 'no_progress');
+    assert.equal(run.failure?.stepId, 's1');
+
+    engine.stop();
+  });
+});
+
+test('step completion payload supports resultText/toolResults and drives checks', async () => {
+  await withTempDir(async (storageDir) => {
+    const bus = new FakeBus();
+    const wf = makeWorkflow({
+      steps: [
+        {
+          id: 's1',
+          name: 's1',
+          instruction: 'run tests',
+          tools: ['bash'],
+          loadSkills: [],
+          dependsOn: [],
+          successChecks: [{ type: 'exit_code', expected: 0 }],
+          retries: 0,
+        },
+      ],
+    });
+    const registry = makeRegistry([wf]);
+    const engine = createWorkflowEngine({ bus, registry, storageDir });
+    engine.start();
+
+    const run = await engine.startRun('test-wf');
+    await bus.emit({
+      type: 'workflow:step:complete',
+      content: {
+        runId: run.id,
+        stepId: 's1',
+        resultText: 'tests passed',
+        toolCalls: [{ name: 'bash', arguments: { command: 'npm test' } }],
+        toolResults: [{ exitCode: 0 }],
+        artifacts: ['test-report.txt'],
+      },
+    });
+
+    await waitFor(() => run.state === 'completed');
+    assert.equal(run.steps[0].state, 'completed');
+    assert.equal(run.steps[0].result, 'tests passed');
+    assert.deepEqual(run.steps[0].resultMeta?.artifacts, ['test-report.txt']);
+
+    engine.stop();
+  });
+});
+
 test('cancelRun sets state to cancelled and emits run complete', async () => {
   await withTempDir(async (storageDir) => {
     const bus = new FakeBus();

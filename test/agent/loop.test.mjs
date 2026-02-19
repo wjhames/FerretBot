@@ -629,6 +629,85 @@ test('loop handles workflow:step:start, scopes tools, and emits workflow:step:co
   assert.equal(stepComplete.content.result, 'workflow step done');
 });
 
+test('workflow step completion includes structured tool call/result payload', async () => {
+  const bus = createEventBus();
+  const emitted = [];
+
+  bus.on('*', async (event) => {
+    emitted.push(event);
+  });
+
+  const provider = createSequencedProvider([
+    {
+      text: '',
+      finishReason: 'tool_calls',
+      toolCalls: [
+        {
+          id: 'call_1',
+          name: 'bash',
+          arguments: { command: 'echo ok' },
+        },
+      ],
+    },
+    {
+      text: 'done after tool',
+      finishReason: 'stop',
+    },
+  ]);
+  const parser = {
+    parse(text) {
+      return { kind: 'final', text };
+    },
+  };
+
+  const loop = createAgentLoop({
+    bus,
+    provider,
+    parser,
+    toolRegistry: {
+      list() {
+        return [{ name: 'bash', description: 'run shell', schema: { type: 'object' } }];
+      },
+      validateCall() {
+        return { valid: true, errors: [] };
+      },
+      async execute() {
+        return { exitCode: 0, stdout: 'ok' };
+      },
+    },
+    maxTokens: 128,
+  });
+
+  loop.start();
+  await bus.emit({
+    type: 'workflow:step:start',
+    channel: 'tui',
+    sessionId: 's-wf-tools',
+    content: {
+      runId: 11,
+      workflowId: 'test-wf',
+      step: {
+        id: 'run-tests',
+        instruction: 'run tests',
+        tools: ['bash'],
+        total: 2,
+      },
+    },
+  });
+
+  await waitFor(() => emitted.some((event) => event.type === 'workflow:step:complete'));
+  loop.stop();
+
+  const stepComplete = emitted.find((event) => event.type === 'workflow:step:complete');
+  assert.ok(stepComplete);
+  assert.equal(stepComplete.content.resultText, 'done after tool');
+  assert.equal(stepComplete.content.toolCalls.length, 1);
+  assert.equal(stepComplete.content.toolCalls[0].name, 'bash');
+  assert.equal(stepComplete.content.toolResults.length, 1);
+  assert.equal(stepComplete.content.toolResults[0].name, 'bash');
+  assert.deepEqual(stepComplete.content.artifacts, []);
+});
+
 test('loop enriches workflow context with session turns, summary, skills, and prior steps', async () => {
   const bus = createEventBus();
   const emitted = [];

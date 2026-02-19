@@ -273,7 +273,12 @@ export class AgentLoop {
       getToolDefinitionsForEvent: (targetEvent) => this.#contextLoader.getToolDefinitionsForEvent(targetEvent),
       buildInitialContext: (targetEvent) => this.#contextLoader.buildInitialContext(targetEvent),
       persistInputTurn: (targetEvent) => this.#persistInputTurn(targetEvent),
-      emitFinal: (targetEvent, completion, text) => this.#emitFinal(targetEvent, completion, text),
+      emitFinal: (targetEvent, completion, text, metadata) => this.#emitFinal(
+        targetEvent,
+        completion,
+        text,
+        metadata,
+      ),
       emitCorrectionFailure: (targetEvent, text) => this.#emitCorrectionFailure(targetEvent, text),
       queueEmit: (payload) => this.#queueEmit(payload),
       executeToolCall: (payload) => executeToolCall({
@@ -299,7 +304,7 @@ export class AgentLoop {
     return this.#contextManager.compactMessagesForContinuation(options);
   }
 
-  async #emitFinal(event, completion, text) {
+  async #emitFinal(event, completion, text, metadata = {}) {
     const finalText = normalizeFinalText(text);
     await this.#appendSessionTurn(event.sessionId, {
       role: 'assistant',
@@ -331,6 +336,10 @@ export class AgentLoop {
           runId: event.content?.runId,
           stepId: event.content?.step?.id,
           result: finalText,
+          resultText: finalText,
+          toolCalls: Array.isArray(metadata.toolCalls) ? metadata.toolCalls : [],
+          toolResults: Array.isArray(metadata.toolResults) ? metadata.toolResults : [],
+          artifacts: Array.isArray(metadata.artifacts) ? metadata.artifacts : [],
         },
       });
     }

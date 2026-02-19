@@ -29,6 +29,8 @@ export async function runAgentTurn(options = {}) {
     messages: initial.messages,
     maxOutputTokens: initial.maxOutputTokens,
     toolCalls: 0,
+    toolCallHistory: [],
+    toolResultHistory: [],
     correctionRetries: 0,
     continuationCount: 0,
     accumulatedTextParts: [],
@@ -52,6 +54,8 @@ export async function runAgentTurn(options = {}) {
         completion,
         parsedToolCall: nativeToolCall,
         toolCalls: state.toolCalls,
+        toolCallHistory: state.toolCallHistory,
+        toolResultHistory: state.toolResultHistory,
         correctionRetries: state.correctionRetries,
       });
       state.toolCalls = handled.toolCalls;
@@ -101,7 +105,10 @@ export async function runAgentTurn(options = {}) {
       }
 
       const fullText = `${state.accumulatedTextParts.join('')}${typeof parsed.text === 'string' ? parsed.text : ''}`;
-      await emitFinal(event, completion, fullText);
+      await emitFinal(event, completion, fullText, {
+        toolCalls: state.toolCallHistory,
+        toolResults: state.toolResultHistory,
+      });
       return;
     }
 
@@ -133,6 +140,8 @@ export async function runAgentTurn(options = {}) {
       completion,
       parsedToolCall: toToolCallFromParsed(parsed, completion),
       toolCalls: state.toolCalls,
+      toolCallHistory: state.toolCallHistory,
+      toolResultHistory: state.toolResultHistory,
       correctionRetries: state.correctionRetries,
     });
     state.toolCalls = handled.toolCalls;

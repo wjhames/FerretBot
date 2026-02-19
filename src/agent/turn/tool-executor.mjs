@@ -7,6 +7,8 @@ export async function executeToolCall(options = {}) {
     completion,
     parsedToolCall,
     toolCalls,
+    toolCallHistory = [],
+    toolResultHistory = [],
     correctionRetries,
     retryLimit,
     maxToolCallsPerStep,
@@ -95,10 +97,20 @@ export async function executeToolCall(options = {}) {
     },
   });
 
+  toolCallHistory.push({
+    name: parsedToolCall.toolName,
+    arguments: parsedToolCall.arguments,
+    toolCallId: parsedToolCall.toolCallId ?? null,
+  });
+
   const toolResult = await toolRegistry.execute({
     name: parsedToolCall.toolName,
     arguments: parsedToolCall.arguments,
     event,
+  });
+  toolResultHistory.push({
+    name: parsedToolCall.toolName,
+    result: toolResult,
   });
   await appendSessionTurn(event.sessionId, {
     role: 'assistant',
