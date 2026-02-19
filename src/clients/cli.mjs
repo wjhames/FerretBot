@@ -375,8 +375,12 @@ export function buildCommandPayload(command, requestId) {
 
 function shouldExitFromCommandResult(command, event, requestId, clientId) {
   if (command.kind === 'message') {
-    return event.type === 'agent:response'
-      && (event.clientId == null || event.clientId === clientId);
+    if (!(event.type === 'agent:response' && (event.clientId == null || event.clientId === clientId))) {
+      return false;
+    }
+
+    const responseRequestId = event?.content?.requestId;
+    return typeof responseRequestId === 'string' && responseRequestId === requestId;
   }
 
   return event.type === 'agent:status'
@@ -555,6 +559,10 @@ export async function runCli(options = {}) {
         && event.type === 'agent:response'
         && isTargetedEvent
       ) {
+        const responseRequestId = event?.content?.requestId;
+        if (!(typeof responseRequestId === 'string' && responseRequestId === requestId)) {
+          return;
+        }
         const text = toDisplayText(event.content).trim();
         if (text.length > 0) {
           stdout.write(`${text}\n`);
