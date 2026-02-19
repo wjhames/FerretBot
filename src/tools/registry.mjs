@@ -1,4 +1,5 @@
 import { createBashTool } from './bash.mjs';
+import { createPatchTool } from './patch.mjs';
 import { createReadTool } from './read.mjs';
 import { createWriteTool } from './write.mjs';
 
@@ -104,6 +105,24 @@ const BUILT_IN_TOOLS = [
       rootDir: options.rootDir,
       rootDirs: options.rootDirs,
       maxBytes: options.maxReadBytes,
+    }),
+  },
+  {
+    name: 'patch',
+    description: 'Apply unified diff patches to files in the workspace.',
+    schema: {
+      type: 'object',
+      properties: {
+        patch: { type: 'string' },
+        checkOnly: { type: 'boolean' },
+      },
+      required: ['patch'],
+      additionalProperties: false,
+    },
+    create: (options) => createPatchTool({
+      rootDir: options.rootDir,
+      rootDirs: options.rootDirs,
+      cwd: options.cwd,
     }),
   },
   {
