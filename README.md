@@ -12,7 +12,7 @@ FerretBot is a local-first agent runtime. It runs on your machine, talks to a lo
 - Guardrails for empty final responses and unsafe tool usage
 - Token-budgeted context assembly from workspace prompt layers
 - Workflow engine for YAML DAGs with retries/checks
-- Built-in tools: `bash`, `read`, `write`, `edit`
+- Built-in tools: `bash`, `read`, `write`
 - Skills loaded at global, workflow, and step levels
 - Session memory (JSONL) + durable workspace memory
 
@@ -23,7 +23,7 @@ Main subsystems in play:
 - `core/`: event bus, lifecycle wiring, IPC server, config defaults
 - `agent/`: context builder, prompt/bootstrap manager, parser, loop
 - `workflows/`: loader, schema checks, registry, run engine
-- `tools/`: registry + built-ins (`bash`, `read`, `write`, `edit`)
+- `tools/`: registry + built-ins (`bash`, `read`, `write`)
 - `provider/`: LM Studio adapter behind a provider interface
 - `memory/`: per-session transcripts + workspace file manager
 
@@ -34,8 +34,6 @@ Data path, simplified:
 3. Agent loop builds context, calls provider, parses output.
 4. Tool calls (if any) execute through tool registry, then loop continues.
 5. Final response is persisted and emitted back to client.
-
-For local file mutation tasks, the preferred path is `edit` (targeted in-place operations) instead of whole-file overwrite.
 
 ## Requirements
 
@@ -126,21 +124,11 @@ Runtime data is still local-only and gitignored:
 - Parse error hints:
   Parser errors include a compact candidate snippet for debugging without excessive context growth.
 - Write safety:
-  Overwriting existing code files requires explicit `rewriteReason`; use `edit` for targeted changes.
+  Overwriting existing code files requires explicit `rewriteReason`.
 - Command hygiene:
   Recursive directory dumps like `ls -R` are rejected and retried with correction guidance.
 - Context budgeting:
   Layer budget aliases (`systemPrompt`, `taskScope`, `skillContent`, `priorContext`) are normalized to runtime layer names.
-
-## Edit Tool Operations
-
-`edit` supports targeted in-place updates for existing files:
-
-- `replace_text`
-- `replace_regex`
-- `insert_before`
-- `insert_after`
-- `delete_range`
 
 ## Commands
 
