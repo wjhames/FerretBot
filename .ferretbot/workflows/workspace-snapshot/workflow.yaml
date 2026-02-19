@@ -1,5 +1,5 @@
 id: workspace-snapshot
-version: "6.2.0"
+version: "6.3.0"
 name: Repo Action Plan
 description: Build an evidence-based, executable action plan from repository signals using small deterministic steps.
 
@@ -33,23 +33,10 @@ steps:
     name: Capture Branch
     type: agent
     instruction: |
-      Execute exactly one command: `git branch --show-current`.
-
-      Write exactly one file:
-      - `.ferretbot/.tmp/workflow-artifacts/repo/branch.txt`
-
-      File content rules:
-      - Write only the observed branch name.
-      - If command execution fails, write `unknown`.
-      - No prose, no markdown, no extra lines.
-
-      Path contract:
-      - Use the exact literal path shown above.
-      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
-      - Do not create or write any other files.
+      Execute exactly this single command and nothing else:
+      `mkdir -p .ferretbot/.tmp/workflow-artifacts/repo && (git branch --show-current > .ferretbot/.tmp/workflow-artifacts/repo/branch.txt || printf 'unknown' > .ferretbot/.tmp/workflow-artifacts/repo/branch.txt)`
     tools:
       - bash
-      - write
     loadSkills: []
     dependsOn:
       - seed-context
@@ -68,23 +55,10 @@ steps:
     name: Capture Git Status
     type: agent
     instruction: |
-      Execute exactly one command: `git status --short`.
-
-      Write exactly one file:
-      - `.ferretbot/.tmp/workflow-artifacts/repo/git-status.txt`
-
-      File content rules:
-      - Write only observed command output.
-      - If command execution fails, write `unknown`.
-      - If output is empty, write an empty file (do not invent text).
-
-      Path contract:
-      - Use the exact literal path shown above.
-      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
-      - Do not create or write any other files.
+      Execute exactly this single command and nothing else:
+      `mkdir -p .ferretbot/.tmp/workflow-artifacts/repo && (git status --short > .ferretbot/.tmp/workflow-artifacts/repo/git-status.txt || printf 'unknown' > .ferretbot/.tmp/workflow-artifacts/repo/git-status.txt)`
     tools:
       - bash
-      - write
     loadSkills: []
     dependsOn:
       - seed-context
@@ -100,23 +74,10 @@ steps:
     name: Capture Top-Level Layout
     type: agent
     instruction: |
-      Execute exactly one command: `ls -1`.
-
-      Write exactly one file:
-      - `.ferretbot/.tmp/workflow-artifacts/repo/top-level-layout.txt`
-
-      File content rules:
-      - Write only observed command output.
-      - If command execution fails, write `unknown`.
-      - No prose, no markdown.
-
-      Path contract:
-      - Use the exact literal path shown above.
-      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
-      - Do not create or write any other files.
+      Execute exactly this single command and nothing else:
+      `mkdir -p .ferretbot/.tmp/workflow-artifacts/repo && (ls -1 > .ferretbot/.tmp/workflow-artifacts/repo/top-level-layout.txt || printf 'unknown' > .ferretbot/.tmp/workflow-artifacts/repo/top-level-layout.txt)`
     tools:
       - bash
-      - write
     loadSkills: []
     dependsOn:
       - seed-context
@@ -135,23 +96,10 @@ steps:
     name: Capture Workflow Inventory
     type: agent
     instruction: |
-      Execute exactly one command: `ls -1 .ferretbot/workflows`.
-
-      Write exactly one file:
-      - `.ferretbot/.tmp/workflow-artifacts/repo/workflow-inventory.txt`
-
-      File content rules:
-      - Write only observed command output.
-      - If command execution fails, write `unknown`.
-      - No prose, no markdown.
-
-      Path contract:
-      - Use the exact literal path shown above.
-      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
-      - Do not create or write any other files.
+      Execute exactly this single command and nothing else:
+      `mkdir -p .ferretbot/.tmp/workflow-artifacts/repo && (ls -1 .ferretbot/workflows > .ferretbot/.tmp/workflow-artifacts/repo/workflow-inventory.txt || printf 'unknown' > .ferretbot/.tmp/workflow-artifacts/repo/workflow-inventory.txt)`
     tools:
       - bash
-      - write
     loadSkills: []
     dependsOn:
       - seed-context
