@@ -1,5 +1,5 @@
 id: workspace-snapshot
-version: "6.3.1"
+version: "6.3.2"
 name: Repo Action Plan
 description: Build an evidence-based, executable action plan from repository signals using small deterministic steps.
 
@@ -118,33 +118,10 @@ steps:
     name: Write Repo State
     type: agent
     instruction: |
-      Write exactly one file:
-      - `.ferretbot/.tmp/workflow-artifacts/repo-state.md`
-
-      Read these files:
-      - `.ferretbot/.tmp/workflow-artifacts/repo/branch.txt`
-      - `.ferretbot/.tmp/workflow-artifacts/repo/git-status.txt`
-      - `.ferretbot/.tmp/workflow-artifacts/repo/top-level-layout.txt`
-      - `.ferretbot/.tmp/workflow-artifacts/repo/workflow-inventory.txt`
-
-      Required headings (exact):
-      - ## Repo State
-      - ### Branch
-      - ### Git Status
-      - ### Top-Level Layout
-      - ### Workflow Inventory
-
-      Tool constraints:
-      - Do not run bash.
-      - Use only the read files above as source evidence.
-
-      Path contract:
-      - Use the exact literal output path shown above.
-      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
-      - Do not create or write any other files.
+      Execute exactly this single command and nothing else:
+      `mkdir -p .ferretbot/.tmp/workflow-artifacts && { printf '## Repo State\n\n### Branch\n'; cat .ferretbot/.tmp/workflow-artifacts/repo/branch.txt; printf '\n### Git Status\n'; cat .ferretbot/.tmp/workflow-artifacts/repo/git-status.txt; printf '\n### Top-Level Layout\n'; cat .ferretbot/.tmp/workflow-artifacts/repo/top-level-layout.txt; printf '\n### Workflow Inventory\n'; cat .ferretbot/.tmp/workflow-artifacts/repo/workflow-inventory.txt; } > .ferretbot/.tmp/workflow-artifacts/repo-state.md`
     tools:
-      - read
-      - write
+      - bash
     loadSkills: []
     dependsOn:
       - capture-branch
@@ -165,6 +142,9 @@ steps:
       - type: file_contains
         path: .tmp/workflow-artifacts/repo-state.md
         text: "### Git Status"
+      - type: file_contains
+        path: .tmp/workflow-artifacts/repo-state.md
+        text: "workspace-snapshot"
     onFail: fail_run
     retries: 1
 
