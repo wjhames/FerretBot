@@ -1,5 +1,5 @@
 id: workspace-snapshot
-version: "6.3.2"
+version: "6.3.3"
 name: Repo Action Plan
 description: Build an evidence-based, executable action plan from repository signals using small deterministic steps.
 
@@ -152,30 +152,10 @@ steps:
     name: Capture Test Signal
     type: agent
     instruction: |
-      Execute exactly one command: `npm test`.
-
-      Write exactly one file:
-      - `.ferretbot/.tmp/workflow-artifacts/test-signal.md`
-
-      Required headings:
-      - ## Test Signal
-      - ### Command
-      - ### Exit Code
-      - ### Key Output
-
-      Rules:
-      - Use observed command output only.
-      - Include short key output excerpt (stdout/stderr summary).
-      - If command fails to run, record exit code and reason.
-      - Do not run additional commands.
-
-      Path contract:
-      - Use the exact literal output path shown above.
-      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
-      - Do not create or write any other files.
+      Execute exactly this single command and nothing else:
+      `mkdir -p .ferretbot/.tmp/workflow-artifacts && (npm test > .ferretbot/.tmp/workflow-artifacts/test-output.log 2>&1; code=$?; pass_line=$(grep -m1 '# pass ' .ferretbot/.tmp/workflow-artifacts/test-output.log || true); fail_line=$(grep -m1 '# fail ' .ferretbot/.tmp/workflow-artifacts/test-output.log || true); printf '## Test Signal\n\n### Command\n`npm test`\n\n### Exit Code\n%s\n\n### Key Output\n%s\n%s\n' "$code" "${pass_line:-# pass unknown}" "${fail_line:-# fail unknown}" > .ferretbot/.tmp/workflow-artifacts/test-signal.md; rm -f .ferretbot/.tmp/workflow-artifacts/test-output.log)`
     tools:
       - bash
-      - write
     loadSkills: []
     dependsOn:
       - write-repo-state
@@ -190,6 +170,9 @@ steps:
       - type: file_contains
         path: .tmp/workflow-artifacts/test-signal.md
         text: "### Exit Code"
+      - type: file_contains
+        path: .tmp/workflow-artifacts/test-signal.md
+        text: "# pass"
     onFail: fail_run
     retries: 1
 
@@ -263,6 +246,12 @@ steps:
         - why (evidence reference)
         - change target (file/module)
         - command to verify
+        - Evidence: <exact quoted line from artifact> (<artifact path>)
+      - Use only facts present in these artifacts:
+        - `.ferretbot/.tmp/workflow-artifacts/repo-state.md`
+        - `.ferretbot/.tmp/workflow-artifacts/test-signal.md`
+        - `.ferretbot/.tmp/workflow-artifacts/package-signal.md`
+      - Do not claim frameworks, files, or tools that are not present in artifacts.
       - Actions must be concrete and executable.
       - Do not run bash commands.
 
@@ -290,6 +279,9 @@ steps:
       - type: file_contains
         path: .tmp/workflow-artifacts/ACTION_PLAN.md
         text: "### Verification Commands"
+      - type: file_contains
+        path: .tmp/workflow-artifacts/ACTION_PLAN.md
+        text: "Evidence:"
     onFail: blocked
     retries: 1
 
@@ -297,29 +289,10 @@ steps:
     name: Verify Plan
     type: agent
     instruction: |
-      Read `.ferretbot/.tmp/workflow-artifacts/ACTION_PLAN.md` and all workflow artifacts, then verify consistency.
-
-      Write exactly one file:
-      - `.ferretbot/.tmp/workflow-artifacts/verification.txt`
-
-      Write exactly one line:
-      - VERIFY_OK
-      OR
-      - VERIFY_FAIL: <reason>
-
-      Minimum checks:
-      - `.ferretbot/.tmp/workflow-artifacts/ACTION_PLAN.md` has all required headings.
-      - Exactly 3 actions are present.
-      - Every action references observed evidence from artifacts.
-      - Every action includes a concrete verification command.
-
-      Path contract:
-      - Use the exact literal output path shown above.
-      - Forbidden path variants: `/.ferretbot/...`, `\.ferretbot/...`, `./.ferretbot/...`.
-      - Do not create or write any other files.
+      Execute exactly this single command and nothing else:
+      `plan=.ferretbot/.tmp/workflow-artifacts/ACTION_PLAN.md; out=.ferretbot/.tmp/workflow-artifacts/verification.txt; if [ ! -f "$plan" ]; then printf 'VERIFY_FAIL: missing action plan\n' > "$out"; elif ! grep -q '^## Action Plan' "$plan"; then printf 'VERIFY_FAIL: missing Action Plan heading\n' > "$out"; elif ! grep -q '^### Top 3 Actions' "$plan"; then printf 'VERIFY_FAIL: missing Top 3 Actions heading\n' > "$out"; elif ! grep -q '^### Verification Commands' "$plan"; then printf 'VERIFY_FAIL: missing Verification Commands heading\n' > "$out"; elif [ "$(grep -E '^[1-3]\\. ' "$plan" | wc -l)" -ne 3 ]; then printf 'VERIFY_FAIL: expected exactly 3 numbered actions\n' > "$out"; elif [ "$(grep -c 'Evidence:' "$plan")" -lt 3 ]; then printf 'VERIFY_FAIL: missing evidence lines\n' > "$out"; else printf 'VERIFY_OK\n' > "$out"; fi`
     tools:
-      - read
-      - write
+      - bash
     loadSkills: []
     dependsOn:
       - build-action-plan
