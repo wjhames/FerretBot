@@ -708,11 +708,12 @@ test('workflow step completion includes structured tool call/result payload', as
   assert.deepEqual(stepComplete.content.artifacts, []);
 });
 
-test('loop enriches workflow context with session turns, summary, skills, and prior steps', async () => {
+test('workflow context stays step-focused while still loading skills and prior steps', async () => {
   const bus = createEventBus();
   const emitted = [];
   const capturedContextInputs = [];
   const skillLoadCalls = [];
+  let conversationLoadCalls = 0;
 
   bus.on('*', async (event) => {
     emitted.push(event);
@@ -780,6 +781,7 @@ test('loop enriches workflow context with session turns, summary, skills, and pr
     },
     sessionMemory: {
       async collectConversation() {
+        conversationLoadCalls += 1;
         return {
           turns: [
             { role: 'user', content: 'earlier user turn' },
@@ -831,10 +833,14 @@ test('loop enriches workflow context with session turns, summary, skills, and pr
 
   assert.equal(capturedContextInputs.length, 1);
   const contextInput = capturedContextInputs[0];
+  assert.equal(conversationLoadCalls, 0);
+  assert.equal(contextInput.userInput, 'build project');
   assert.equal(contextInput.skillContent, 'workflow skill content');
-  assert.equal(contextInput.conversationSummary, 'Earlier turns: user discussed goals.');
-  assert.equal(contextInput.conversation.length, 2);
+  assert.equal(contextInput.conversationSummary, '');
+  assert.equal(contextInput.conversation.length, 0);
   assert.equal(contextInput.priorSteps.length, 1);
   assert.match(contextInput.priorSteps[0].instruction, /prepare workspace/);
   assert.equal(contextInput.priorSteps[0].result, 'workspace ready');
+  assert.deepEqual(contextInput.promptLayers, {});
+  assert.equal(contextInput.extraRules, '');
 });

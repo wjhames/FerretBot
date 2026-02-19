@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { evaluateChecks, registerCheckType } from '../../src/workflows/checks.mjs';
 
 async function withTempDir(run) {
@@ -88,6 +89,14 @@ test('exit_code check fails on mismatch', async () => {
   assert.equal(result.passed, false);
 });
 
+test('command_exit_code check matches expected code', async () => {
+  const result = await evaluateChecks(
+    [{ type: 'command_exit_code', expected: 0 }],
+    { toolResults: [{ code: 0 }] },
+  );
+  assert.equal(result.passed, true);
+});
+
 test('file_exists check passes for existing file', async () => {
   await withTempDir(async (dir) => {
     const filePath = path.join(dir, 'output.txt');
@@ -107,6 +116,47 @@ test('file_exists check fails for missing file', async () => {
     {},
   );
   assert.equal(result.passed, false);
+});
+
+test('file_contains check validates file content', async () => {
+  await withTempDir(async (dir) => {
+    const filePath = path.join(dir, 'status.txt');
+    await fs.writeFile(filePath, 'build SUCCESS');
+
+    const result = await evaluateChecks(
+      [{ type: 'file_contains', path: filePath, text: 'SUCCESS' }],
+      {},
+    );
+    assert.equal(result.passed, true);
+  });
+});
+
+test('file_regex check validates file content pattern', async () => {
+  await withTempDir(async (dir) => {
+    const filePath = path.join(dir, 'status.txt');
+    await fs.writeFile(filePath, 'tests: 14 passed');
+
+    const result = await evaluateChecks(
+      [{ type: 'file_regex', path: filePath, pattern: '\\d+ passed' }],
+      {},
+    );
+    assert.equal(result.passed, true);
+  });
+});
+
+test('file_hash_changed check fails when hash is unchanged', async () => {
+  await withTempDir(async (dir) => {
+    const filePath = path.join(dir, 'artifact.txt');
+    const content = 'same content';
+    await fs.writeFile(filePath, content);
+    const hash = crypto.createHash('sha256').update(content).digest('hex');
+
+    const result = await evaluateChecks(
+      [{ type: 'file_hash_changed', path: filePath, previousHash: hash }],
+      {},
+    );
+    assert.equal(result.passed, false);
+  });
 });
 
 test('non_empty check passes for non-empty output', async () => {

@@ -18,6 +18,12 @@ const DEFAULT_MAX_CONTINUATIONS = 3;
 
 function coerceInputText(event) {
   const { content } = event;
+  if (event?.type === WORKFLOW_STEP_START_EVENT) {
+    const instruction = content?.step?.instruction;
+    if (typeof instruction === 'string' && instruction.trim().length > 0) {
+      return instruction;
+    }
+  }
 
   if (typeof content === 'string') {
     return content;

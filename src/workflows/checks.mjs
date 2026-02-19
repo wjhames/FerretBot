@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import crypto from 'node:crypto';
 
 const checkHandlers = new Map();
 
@@ -68,6 +69,10 @@ function exitCodeCheck(check, context) {
   };
 }
 
+function commandExitCodeCheck(check, context) {
+  return exitCodeCheck(check, context);
+}
+
 async function fileExistsCheck(check) {
   const filePath = check.path ?? '';
   let passed = false;
@@ -86,6 +91,85 @@ async function fileExistsCheck(check) {
   };
 }
 
+async function fileContainsCheck(check) {
+  const filePath = check.path ?? '';
+  const text = String(check.text ?? '');
+  let content = '';
+  try {
+    content = await fs.readFile(filePath, 'utf8');
+  } catch {
+    return {
+      type: 'file_contains',
+      passed: false,
+      message: `file '${filePath}' could not be read.`,
+    };
+  }
+
+  const passed = content.includes(text);
+  return {
+    type: 'file_contains',
+    passed,
+    message: passed
+      ? `file '${filePath}' contains '${text}'.`
+      : `file '${filePath}' does not contain '${text}'.`,
+  };
+}
+
+async function fileRegexCheck(check) {
+  const filePath = check.path ?? '';
+  const pattern = check.pattern ?? '';
+  let content = '';
+  try {
+    content = await fs.readFile(filePath, 'utf8');
+  } catch {
+    return {
+      type: 'file_regex',
+      passed: false,
+      message: `file '${filePath}' could not be read.`,
+    };
+  }
+
+  let passed = false;
+  try {
+    passed = new RegExp(pattern).test(content);
+  } catch {
+    return { type: 'file_regex', passed: false, message: `invalid regex '${pattern}'.` };
+  }
+
+  return {
+    type: 'file_regex',
+    passed,
+    message: passed
+      ? `file '${filePath}' matches /${pattern}/.`
+      : `file '${filePath}' does not match /${pattern}/.`,
+  };
+}
+
+async function fileHashChangedCheck(check, context) {
+  const filePath = check.path ?? '';
+  let content = '';
+  try {
+    content = await fs.readFile(filePath, 'utf8');
+  } catch {
+    return {
+      type: 'file_hash_changed',
+      passed: false,
+      message: `file '${filePath}' could not be read.`,
+    };
+  }
+
+  const currentHash = crypto.createHash('sha256').update(content).digest('hex');
+  const previousHash = String(check.previousHash ?? context.previousHash ?? '').trim();
+  const passed = previousHash.length > 0 && currentHash !== previousHash;
+  return {
+    type: 'file_hash_changed',
+    passed,
+    message: passed
+      ? `file '${filePath}' hash changed.`
+      : `file '${filePath}' hash did not change.`,
+  };
+}
+
 function nonEmptyCheck(_check, context) {
   const passed = typeof context.stepOutput === 'string' && context.stepOutput.trim().length > 0;
   return {
@@ -99,7 +183,11 @@ registerCheckType('contains', containsCheck);
 registerCheckType('not_contains', notContainsCheck);
 registerCheckType('regex', regexCheck);
 registerCheckType('exit_code', exitCodeCheck);
+registerCheckType('command_exit_code', commandExitCodeCheck);
 registerCheckType('file_exists', fileExistsCheck);
+registerCheckType('file_contains', fileContainsCheck);
+registerCheckType('file_regex', fileRegexCheck);
+registerCheckType('file_hash_changed', fileHashChangedCheck);
 registerCheckType('non_empty', nonEmptyCheck);
 
 export async function evaluateChecks(checks, context = {}) {

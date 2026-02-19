@@ -22,6 +22,8 @@ export function createAgentContextLoader(options = {}) {
     buildMessages,
     defaultBuildMessages,
     coerceInputText,
+    includeWorkflowConversationContext = false,
+    includeWorkflowPromptContext = false,
   } = options;
 
   function getToolDefinitions() {
@@ -51,6 +53,10 @@ export function createAgentContextLoader(options = {}) {
   }
 
   async function loadConversationContext(event) {
+    if (event?.type === WORKFLOW_STEP_START_EVENT && !includeWorkflowConversationContext) {
+      return { turns: [], summary: '' };
+    }
+
     if (!sessionMemory || typeof sessionMemory.collectConversation !== 'function') {
       return { turns: [], summary: '' };
     }
@@ -192,7 +198,9 @@ export function createAgentContextLoader(options = {}) {
     const conversationContext = await loadConversationContext(event);
     const skillContent = await loadSkillText(event);
     const priorSteps = buildPriorSteps(event);
-    const promptContext = await loadPromptContext();
+    const promptContext = (
+      isStepEvent && !includeWorkflowPromptContext
+    ) ? { extraRules: '', layers: {} } : await loadPromptContext();
 
     const builtContext = await Promise.resolve(contextManager.buildMessages({
       event,

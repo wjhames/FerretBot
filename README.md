@@ -92,6 +92,8 @@ Runtime data is still local-only and gitignored:
 - `loadSkills` resolution order: step, then workflow, then global.
 - This repo tracks `.ferretbot/workflows/*` as shareable workflow definitions.
 - Workflow step contracts currently support: `id`, `name`, `type`, `instruction`, `tools`, `loadSkills`, `dependsOn`, `successChecks`, `retries`, `path`, `content`, `mode`.
+- Workflow step context is step-focused by default: current step, allowed tools, workflow args, prior step results, and requested skills.
+- Built-in success checks include `contains`, `not_contains`, `regex`, `exit_code`, `command_exit_code`, `file_exists`, `file_contains`, `file_regex`, `file_hash_changed`, `non_empty`.
 
 ## Current Status
 
