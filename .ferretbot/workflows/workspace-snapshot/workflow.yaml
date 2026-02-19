@@ -1,222 +1,219 @@
 id: workspace-snapshot
-version: "5.0.0"
-name: Workspace Intelligence Snapshot
-description: Produce a multi-artifact project snapshot with evidence, risk analysis, and verification gates.
+version: "6.0.0"
+name: Repo Action Plan
+description: Build an evidence-based, executable action plan from repository signals using small deterministic steps.
 
 inputs:
-  - name: focus
+  - name: goal
     type: string
     required: false
-    default: "overall project health"
-  - name: includeTests
-    type: boolean
-    required: false
-    default: true
-  - name: includeRisks
-    type: boolean
-    required: false
-    default: true
+    default: "stabilize and improve repo quality"
 
 steps:
-  - id: seed-run-context
-    name: Seed Run Context
+  - id: seed-context
+    name: Seed Context
     type: system_write_file
-    path: .tmp/workflow-artifacts/run-context.md
+    path: .tmp/workflow-artifacts/context.md
     content: |
-      # Workspace Snapshot Run Context
-      - Focus: {{args.focus}}
-      - includeTests: {{args.includeTests}}
-      - includeRisks: {{args.includeRisks}}
+      # Workflow Goal
+      {{args.goal}}
     dependsOn: []
     outputs:
-      - .tmp/workflow-artifacts/run-context.md
+      - .tmp/workflow-artifacts/context.md
     doneWhen:
       - type: file_exists
-        path: .tmp/workflow-artifacts/run-context.md
+        path: .tmp/workflow-artifacts/context.md
       - type: file_contains
-        path: .tmp/workflow-artifacts/run-context.md
-        text: "# Workspace Snapshot Run Context"
+        path: .tmp/workflow-artifacts/context.md
+        text: "# Workflow Goal"
     onFail: fail_run
     retries: 0
 
-  - id: collect-facts
-    name: Collect Facts
+  - id: capture-repo-state
+    name: Capture Repo State
     type: agent
     instruction: |
-      Collect factual repository data and write TWO files:
-      1) `.tmp/workflow-artifacts/facts.md`
-      2) `.tmp/workflow-artifacts/facts.json`
+      Use tools only and write `.tmp/workflow-artifacts/repo-state.md`.
 
-      Required sections in facts.md (exact headings):
-      - ## Facts
+      Collect:
+      - branch (`git branch --show-current`)
+      - git status (`git status --short`)
+      - top-level files/dirs (`ls -1`)
+      - workflow directories (`ls -1 .ferretbot/workflows`)
+
+      Required headings (exact):
+      - ## Repo State
       - ### Branch
       - ### Git Status
       - ### Top-Level Layout
-      - ### Test File Sample
-      - ### Scripts
       - ### Workflow Inventory
-      - ### Tooling Notes
-
-      Required keys in facts.json:
-      - branch
-      - gitStatus
-      - topLevelLayout
-      - testFileSample
-      - scripts
-      - workflowInventory
-      - toolingNotes
-
-      Use tools only; do not guess:
-      - branch: git branch --show-current
-      - status: git status --short
-      - layout: list top-level files/dirs
-      - tests: find test -type f | head -n 20
-      - scripts: read package.json and extract scripts
-      - workflows: list .ferretbot/workflows and workflow ids
-      - tooling notes: summarize built-in tools from observed source/docs
 
       Rules:
-      - facts.md and facts.json must contain only observed data.
-      - If a command fails, store "unknown" for that field.
-      - Write both files using the write tool.
+      - Only observed facts.
+      - If a command fails, write "unknown" for that field.
     tools:
       - bash
-      - read
       - write
     loadSkills: []
     dependsOn:
-      - seed-run-context
+      - seed-context
     outputs:
-      - .tmp/workflow-artifacts/facts.md
-      - .tmp/workflow-artifacts/facts.json
+      - .tmp/workflow-artifacts/repo-state.md
     doneWhen:
       - type: file_exists
-        path: .tmp/workflow-artifacts/facts.md
+        path: .tmp/workflow-artifacts/repo-state.md
       - type: file_contains
-        path: .tmp/workflow-artifacts/facts.md
-        text: "## Facts"
+        path: .tmp/workflow-artifacts/repo-state.md
+        text: "## Repo State"
       - type: file_contains
-        path: .tmp/workflow-artifacts/facts.md
-        text: "### Workflow Inventory"
-      - type: file_exists
-        path: .tmp/workflow-artifacts/facts.json
-      - type: file_contains
-        path: .tmp/workflow-artifacts/facts.json
-        text: "\"branch\""
-      - type: file_contains
-        path: .tmp/workflow-artifacts/facts.json
-        text: "\"scripts\""
-    onFail: fail_run
-    retries: 2
-
-  - id: write-status
-    name: Write STATUS.md
-    type: agent
-    instruction: |
-      Read `.tmp/workflow-artifacts/facts.md` and `.tmp/workflow-artifacts/facts.json`.
-      Generate `STATUS.md` at repository root.
-
-      Required headings in STATUS.md (exact):
-      - ## Project Snapshot
-      - ### Branch & Status
-      - ### Top-Level Layout
-      - ### Scripts
-      - ### Workflow Capability
-      - ### Risks / Notes
-
-      Rules:
-      - Use only facts from the collected artifacts.
-      - Do not add claims not present in those artifacts.
-      - If a fact is missing, write "unknown".
-      - Keep concise and factual.
-      - If includeTests is true, include explicit test sample summary.
-    tools:
-      - read
-      - write
-    loadSkills: []
-    dependsOn:
-      - collect-facts
-    outputs:
-      - STATUS.md
-    doneWhen:
-      - type: file_exists
-        path: STATUS.md
-      - type: file_contains
-        path: STATUS.md
-        text: "## Project Snapshot"
-      - type: file_contains
-        path: STATUS.md
-        text: "### Workflow Capability"
-      - type: file_contains
-        path: STATUS.md
-        text: "### Risks / Notes"
-    onFail: fail_run
-    retries: 2
-
-  - id: write-risk-register
-    name: Write Risk Register
-    type: agent
-    instruction: |
-      Read `.tmp/workflow-artifacts/facts.md`, `.tmp/workflow-artifacts/facts.json`, and `STATUS.md`.
-      Write `.tmp/workflow-artifacts/risk-register.md`.
-
-      Required headings:
-      - ## Risk Register
-      - ### High
-      - ### Medium
-      - ### Low
-      - ### Mitigations
-
-      Rules:
-      - Include only risks justified by observed repository facts.
-      - Each mitigation must be concrete and testable.
-      - If includeRisks is false, still create the file and explain that risk detail was minimized.
-    tools:
-      - read
-      - write
-    loadSkills: []
-    dependsOn:
-      - write-status
-    outputs:
-      - .tmp/workflow-artifacts/risk-register.md
-    doneWhen:
-      - type: file_exists
-        path: .tmp/workflow-artifacts/risk-register.md
-      - type: file_contains
-        path: .tmp/workflow-artifacts/risk-register.md
-        text: "## Risk Register"
-      - type: file_contains
-        path: .tmp/workflow-artifacts/risk-register.md
-        text: "### Mitigations"
+        path: .tmp/workflow-artifacts/repo-state.md
+        text: "### Git Status"
     onFail: fail_run
     retries: 1
 
-  - id: verify-output
-    name: Verify Output Pack
+  - id: capture-test-signal
+    name: Capture Test Signal
     type: agent
     instruction: |
-      Verify consistency across:
-      - `.tmp/workflow-artifacts/facts.md`
-      - `.tmp/workflow-artifacts/facts.json`
-      - `STATUS.md`
-      - `.tmp/workflow-artifacts/risk-register.md`
+      Run `npm test` once and write `.tmp/workflow-artifacts/test-signal.md`.
 
-      Write `.tmp/workflow-artifacts/verification.txt` with exactly one line:
+      Required headings:
+      - ## Test Signal
+      - ### Command
+      - ### Exit Code
+      - ### Key Output
+
+      Rules:
+      - Use observed command output only.
+      - Include short key output excerpt (stdout/stderr summary).
+      - If command fails to run, record exit code and reason.
+    tools:
+      - bash
+      - write
+    loadSkills: []
+    dependsOn:
+      - capture-repo-state
+    outputs:
+      - .tmp/workflow-artifacts/test-signal.md
+    doneWhen:
+      - type: file_exists
+        path: .tmp/workflow-artifacts/test-signal.md
+      - type: file_contains
+        path: .tmp/workflow-artifacts/test-signal.md
+        text: "## Test Signal"
+      - type: file_contains
+        path: .tmp/workflow-artifacts/test-signal.md
+        text: "### Exit Code"
+    onFail: fail_run
+    retries: 1
+
+  - id: capture-package-signal
+    name: Capture Package Signal
+    type: agent
+    instruction: |
+      Read `package.json` and write `.tmp/workflow-artifacts/package-signal.md`.
+
+      Required headings:
+      - ## Package Signal
+      - ### Scripts
+      - ### Dependencies
+      - ### Engines
+
+      Rules:
+      - Use observed values only.
+      - If a field is absent, write "none".
+    tools:
+      - read
+      - write
+    loadSkills: []
+    dependsOn:
+      - capture-repo-state
+    outputs:
+      - .tmp/workflow-artifacts/package-signal.md
+    doneWhen:
+      - type: file_exists
+        path: .tmp/workflow-artifacts/package-signal.md
+      - type: file_contains
+        path: .tmp/workflow-artifacts/package-signal.md
+        text: "## Package Signal"
+      - type: file_contains
+        path: .tmp/workflow-artifacts/package-signal.md
+        text: "### Scripts"
+    onFail: fail_run
+    retries: 1
+
+  - id: build-action-plan
+    name: Build Action Plan
+    type: agent
+    instruction: |
+      Read:
+      - `.tmp/workflow-artifacts/repo-state.md`
+      - `.tmp/workflow-artifacts/test-signal.md`
+      - `.tmp/workflow-artifacts/package-signal.md`
+      - `.tmp/workflow-artifacts/context.md`
+
+      Write `ACTION_PLAN.md` at repository root.
+
+      Required headings (exact):
+      - ## Action Plan
+      - ### Current State
+      - ### Top 3 Actions
+      - ### Action Details
+      - ### Verification Commands
+
+      Rules:
+      - Exactly 3 actions, highest impact first.
+      - Each action must include:
+        - why (evidence reference)
+        - change target (file/module)
+        - command to verify
+      - Actions must be concrete and executable.
+    tools:
+      - read
+      - write
+    loadSkills: []
+    dependsOn:
+      - capture-test-signal
+      - capture-package-signal
+    outputs:
+      - ACTION_PLAN.md
+    doneWhen:
+      - type: file_exists
+        path: ACTION_PLAN.md
+      - type: file_contains
+        path: ACTION_PLAN.md
+        text: "## Action Plan"
+      - type: file_contains
+        path: ACTION_PLAN.md
+        text: "### Top 3 Actions"
+      - type: file_contains
+        path: ACTION_PLAN.md
+        text: "### Verification Commands"
+    onFail: blocked
+    retries: 1
+
+  - id: verify-plan
+    name: Verify Plan
+    type: agent
+    instruction: |
+      Verify `ACTION_PLAN.md` against all workflow artifacts and write `.tmp/workflow-artifacts/verification.txt`.
+
+      Write exactly one line:
       - VERIFY_OK
       OR
       - VERIFY_FAIL: <reason>
 
       Minimum checks:
-      - STATUS.md headings exist.
-      - STATUS claims are consistent with facts artifacts.
-      - Risk register references concrete evidence from facts.
-      - No contradiction between branch/status in facts and STATUS.
+      - ACTION_PLAN.md has all required headings.
+      - Exactly 3 actions are present.
+      - Every action references observed evidence from artifacts.
+      - Every action includes a concrete verification command.
     tools:
       - read
       - write
     loadSkills: []
     dependsOn:
-      - write-risk-register
+      - build-action-plan
     outputs:
       - .tmp/workflow-artifacts/verification.txt
     doneWhen:
