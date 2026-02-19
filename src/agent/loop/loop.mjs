@@ -364,6 +364,35 @@ export class AgentLoop {
       }
     };
 
+    const emitFailure = (targetEvent, failure = {}) => {
+      if (requestScoped && terminalSent) {
+        return;
+      }
+
+      const targetRequestId = getRequestIdFromEvent(targetEvent);
+      this.#queueEmit({
+        type: 'agent:response',
+        channel: targetEvent.channel,
+        sessionId: targetEvent.sessionId,
+        content: {
+          text: failure.text ?? 'Agent failed to complete request.',
+          finishReason: failure.finishReason ?? 'internal_error',
+          requestId: targetRequestId,
+          failure: {
+            reason: failure.reason ?? 'unknown_failure',
+            retryable: Boolean(failure.retryable),
+            nextAction: failure.nextAction ?? 'retry',
+            lastTool: failure.lastTool ?? null,
+            contract: failure.contract ?? null,
+          },
+        },
+      });
+
+      if (requestScoped) {
+        terminalSent = true;
+      }
+    };
+
     const turnPromise = runAgentTurn({
       event,
       provider: this.#provider,
@@ -376,6 +405,7 @@ export class AgentLoop {
       persistInputTurn: (targetEvent) => this.#persistInputTurn(targetEvent),
       emitFinal,
       emitCorrectionFailure,
+      emitFailure,
       queueEmit,
       executeToolCall: (payload) => executeToolCall({
         ...payload,

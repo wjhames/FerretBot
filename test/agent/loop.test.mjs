@@ -526,7 +526,7 @@ test('loop retries on parse/validation errors and then succeeds', async () => {
   assert.equal(responseEvent.content.text, 'Final after correction');
 });
 
-test('loop replaces blank final text with diagnostic message', async () => {
+test('loop retries and surfaces structured failure for blank final text', async () => {
   const bus = createEventBus();
   const emitted = [];
 
@@ -572,7 +572,13 @@ test('loop replaces blank final text with diagnostic message', async () => {
 
   const responseEvent = emitted.find((event) => event.type === 'agent:response');
   assert.ok(responseEvent);
-  assert.equal(responseEvent.content.text, 'Model returned an empty response.');
+  assert.equal(responseEvent.content.finishReason, 'guardrail_failed');
+  assert.equal(responseEvent.content.failure.reason, 'empty_final_response');
+
+  const retryStatus = emitted.find(
+    (event) => event.type === 'agent:status' && event.content.phase === 'final:retry',
+  );
+  assert.ok(retryStatus);
 });
 
 test('loop default context includes a system prompt message', async () => {

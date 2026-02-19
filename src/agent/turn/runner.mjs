@@ -6,6 +6,11 @@ import {
   toToolCallFromNative,
   toToolCallFromParsed,
 } from './policy.mjs';
+import {
+  buildFinalRetryPrompt,
+  deriveTaskContract,
+  verifyFinalResponse,
+} from './contract.mjs';
 import { createTurnWriteRollback } from './write-rollback.mjs';
 
 async function rollbackTurnWrites({ event, queueEmit, writeRollback }) {
@@ -59,6 +64,7 @@ export async function runAgentTurn(options = {}) {
     executeToolCall,
     createWriteRollback = createTurnWriteRollback,
     signal = null,
+    emitFailure = null,
   } = options;
 
   const throwIfAborted = () => {
@@ -81,6 +87,8 @@ export async function runAgentTurn(options = {}) {
     accumulatedTextParts: [],
   };
   const writeRollback = createWriteRollback();
+  const taskContract = deriveTaskContract(event);
+  let finalVerificationRetries = 0;
 
   await persistInputTurn(event);
 
@@ -155,6 +163,56 @@ export async function runAgentTurn(options = {}) {
       }
 
       const fullText = `${state.accumulatedTextParts.join('')}${typeof parsed.text === 'string' ? parsed.text : ''}`;
+      const verification = verifyFinalResponse({
+        finalText: fullText,
+        contract: taskContract,
+        toolResultHistory: state.toolResultHistory,
+      });
+      if (!verification.ok) {
+        const canRetry = verification.failure?.retryable && finalVerificationRetries < retryLimit;
+        if (canRetry) {
+          finalVerificationRetries += 1;
+          state.messages.push({
+            role: 'assistant',
+            content: typeof completion.text === 'string' ? completion.text : '',
+          });
+          state.messages.push({
+            role: 'system',
+            content: buildFinalRetryPrompt(verification.failure.reason),
+          });
+          queueEmit({
+            type: 'agent:status',
+            channel: event.channel,
+            sessionId: event.sessionId,
+            content: {
+              phase: 'final:retry',
+              text: `Retrying final response verification (${finalVerificationRetries}/${retryLimit}).`,
+              detail: verification.failure.reason,
+            },
+          });
+          continue;
+        }
+
+        await rollbackTurnWrites({ event, queueEmit, writeRollback });
+        if (typeof emitFailure === 'function') {
+          emitFailure(event, {
+            finishReason: 'guardrail_failed',
+            text: 'Agent failed final verification.',
+            reason: verification.failure?.reason ?? 'verification_failed',
+            retryable: Boolean(verification.failure?.retryable),
+            nextAction: verification.failure?.nextAction ?? 'inspect_prompt_and_retry',
+            contract: taskContract,
+            lastTool: state.toolCallHistory.length > 0
+              ? state.toolCallHistory[state.toolCallHistory.length - 1].name
+              : null,
+          });
+          return;
+        }
+
+        emitCorrectionFailure(event, 'Unable to produce a valid final response after retries.');
+        return;
+      }
+
       await emitFinal(event, completion, fullText, {
         toolCalls: state.toolCallHistory,
         toolResults: state.toolResultHistory,
