@@ -19,7 +19,7 @@ async function withTempWorkspace(run) {
   }
 }
 
-test('bootstrap manager ensures MEMORY.md and does not scaffold AGENTS.md', async () => {
+test('bootstrap manager does not scaffold profile files', async () => {
   await withTempWorkspace(async ({ agentStateDir, workDir }) => {
     const workspaceManager = createWorkspaceManager({ baseDir: agentStateDir });
     const bootstrap = createWorkspaceBootstrapManager({
@@ -34,11 +34,7 @@ test('bootstrap manager ensures MEMORY.md and does not scaffold AGENTS.md', asyn
     assert.equal(agentsExists, false, 'expected AGENTS.md to be absent');
 
     const memoryExists = await workspaceManager.exists('MEMORY.md');
-    assert.equal(memoryExists, true, 'expected MEMORY.md to be created');
-    const memoryText = await workspaceManager.readTextFile('MEMORY.md');
-    assert.match(memoryText, /^# MEMORY\.md/m);
-    assert.match(memoryText, /^## Facts/m);
-    assert.match(memoryText, /^## Recent Decisions/m);
+    assert.equal(memoryExists, false, 'expected MEMORY.md to be absent');
   });
 });
 
@@ -63,7 +59,6 @@ test('loadPromptContext returns minimal startup rules without injecting prompt l
     assert.match(context.extraRules, /Agent instruction\/memory files are under the agent state directory/);
     assert.match(context.extraRules, /AGENTS\.md policy files are loaded into bootstrap context automatically/);
     assert.match(context.extraRules, /use the \.ferretbot\/ path prefix/);
-    assert.match(context.extraRules, /Use \.ferretbot\/MEMORY\.md as the canonical long-term memory file/);
   });
 });
 
@@ -78,10 +73,10 @@ test('loadPromptContext merges project and .ferretbot AGENTS and loads reference
     ].join('\n'), 'utf8');
     await fs.writeFile(path.join(agentStateDir, 'AGENTS.md'), [
       '# State policy',
-      'Read `.ferretbot/SOUL.md` and `.ferretbot/USER.md`.',
+      'Read `.ferretbot/PROFILE_A.md` and `.ferretbot/PROFILE_B.md`.',
     ].join('\n'), 'utf8');
-    await fs.writeFile(path.join(agentStateDir, 'SOUL.md'), 'Soul text v1', 'utf8');
-    await fs.writeFile(path.join(agentStateDir, 'USER.md'), 'User text v1', 'utf8');
+    await fs.writeFile(path.join(agentStateDir, 'PROFILE_A.md'), 'Profile text a v1', 'utf8');
+    await fs.writeFile(path.join(agentStateDir, 'PROFILE_B.md'), 'Profile text b v1', 'utf8');
 
     const bootstrap = createWorkspaceBootstrapManager({
       workspaceManager,
@@ -93,8 +88,8 @@ test('loadPromptContext merges project and .ferretbot AGENTS and loads reference
     assert.equal(first.bootstrapState?.cacheHit, false);
     assert.match(first.layers.bootstrap, /Project AGENTS\.md/);
     assert.match(first.layers.bootstrap, /\.ferretbot\/AGENTS\.md/);
-    assert.match(first.layers.bootstrap, /Soul text v1/);
-    assert.match(first.layers.bootstrap, /User text v1/);
+    assert.match(first.layers.bootstrap, /Profile text a v1/);
+    assert.match(first.layers.bootstrap, /Profile text b v1/);
 
     const second = await bootstrap.loadPromptContext();
     assert.equal(second.bootstrapState?.cacheHit, true);
@@ -107,8 +102,8 @@ test('loadPromptContext invalidates cached includes when referenced files change
     const workspaceManager = {
       baseDir: agentStateDir,
     };
-    await fs.writeFile(path.join(agentStateDir, 'AGENTS.md'), 'Read `.ferretbot/SOUL.md`.', 'utf8');
-    await fs.writeFile(path.join(agentStateDir, 'SOUL.md'), 'Soul text v1', 'utf8');
+    await fs.writeFile(path.join(agentStateDir, 'AGENTS.md'), 'Read `.ferretbot/PROFILE_A.md`.', 'utf8');
+    await fs.writeFile(path.join(agentStateDir, 'PROFILE_A.md'), 'Profile text a v1', 'utf8');
 
     const bootstrap = createWorkspaceBootstrapManager({
       workspaceManager,
@@ -118,14 +113,14 @@ test('loadPromptContext invalidates cached includes when referenced files change
 
     const first = await bootstrap.loadPromptContext();
     assert.equal(first.bootstrapState?.cacheHit, false);
-    assert.match(first.layers.bootstrap, /Soul text v1/);
+    assert.match(first.layers.bootstrap, /Profile text a v1/);
 
     await new Promise((resolve) => setTimeout(resolve, 20));
-    await fs.writeFile(path.join(agentStateDir, 'SOUL.md'), 'Soul text v2', 'utf8');
+    await fs.writeFile(path.join(agentStateDir, 'PROFILE_A.md'), 'Profile text a v2', 'utf8');
 
     const second = await bootstrap.loadPromptContext();
     assert.equal(second.bootstrapState?.cacheHit, false);
-    assert.match(second.layers.bootstrap, /Soul text v2/);
+    assert.match(second.layers.bootstrap, /Profile text a v2/);
   });
 });
 
