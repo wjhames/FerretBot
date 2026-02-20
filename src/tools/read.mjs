@@ -112,6 +112,7 @@ export class ReadTool {
     return {
       path: path.relative(resolvedRoot, resolvedPath) || path.basename(resolvedPath),
       content: usedBuffer.toString('utf8'),
+      bytes: usedBuffer.byteLength,
       bytesRead: usedBuffer.byteLength,
       truncated,
     };
