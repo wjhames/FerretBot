@@ -44,6 +44,107 @@ test('write tool writes and appends files; read tool truncates by maxBytes', asy
   });
 });
 
+test('WRITE-01 create new file with exact content on overwrite', async () => {
+  await withTempDir(async (rootDir) => {
+    const writeTool = createWriteTool({ rootDir });
+    const filePath = path.join(rootDir, 'notes', 'created.txt');
+    const content = 'line-1\nline-2\n';
+
+    const result = await writeTool.execute({
+      path: 'notes/created.txt',
+      content,
+      mode: 'overwrite',
+    });
+
+    const written = await fs.readFile(filePath, 'utf8');
+    assert.equal(written, content);
+    assert.equal(result.path, 'notes/created.txt');
+    assert.equal(result.existedBefore, false);
+  });
+});
+
+test('WRITE-02 overwrite existing file exactly', async () => {
+  await withTempDir(async (rootDir) => {
+    const writeTool = createWriteTool({ rootDir });
+    const filePath = path.join(rootDir, 'notes', 'overwrite.txt');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, 'old-content', 'utf8');
+
+    await writeTool.execute({
+      path: 'notes/overwrite.txt',
+      content: 'new-content',
+      mode: 'overwrite',
+    });
+
+    const written = await fs.readFile(filePath, 'utf8');
+    assert.equal(written, 'new-content');
+  });
+});
+
+test('WRITE-03 append preserves original content and appends exactly once', async () => {
+  await withTempDir(async (rootDir) => {
+    const writeTool = createWriteTool({ rootDir });
+    const filePath = path.join(rootDir, 'notes', 'append.txt');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, 'alpha', 'utf8');
+
+    await writeTool.execute({
+      path: 'notes/append.txt',
+      content: '-beta',
+      mode: 'append',
+    });
+
+    const written = await fs.readFile(filePath, 'utf8');
+    assert.equal(written, 'alpha-beta');
+    assert.equal(written.split('-beta').length - 1, 1);
+  });
+});
+
+test('WRITE-04 reject .env and escaped writes with explicit policy errors and unchanged files', async () => {
+  await withTempDir(async (rootDir) => {
+    const writeTool = createWriteTool({ rootDir });
+    const envPath = path.join(rootDir, '.env');
+    const safePath = path.join(rootDir, 'notes', 'safe.txt');
+    await fs.mkdir(path.dirname(safePath), { recursive: true });
+    await fs.writeFile(envPath, 'TOKEN=original', 'utf8');
+    await fs.writeFile(safePath, 'safe-original', 'utf8');
+
+    await assert.rejects(
+      writeTool.execute({ path: '.env', content: 'TOKEN=mutated', mode: 'overwrite' }),
+      /Writing \.env files is not allowed\./,
+    );
+
+    await assert.rejects(
+      writeTool.execute({ path: '../outside.txt', content: 'bad', mode: 'overwrite' }),
+      /Path escapes root directory/,
+    );
+
+    assert.equal(await fs.readFile(envPath, 'utf8'), 'TOKEN=original');
+    assert.equal(await fs.readFile(safePath, 'utf8'), 'safe-original');
+  });
+});
+
+test('WRITE-05 reject overwrite when content is missing or blank', async () => {
+  await withTempDir(async (rootDir) => {
+    const writeTool = createWriteTool({ rootDir });
+    const filePath = path.join(rootDir, 'notes', 'guarded.txt');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, 'stable', 'utf8');
+
+    await assert.rejects(
+      writeTool.execute({ path: 'notes/guarded.txt', mode: 'overwrite' }),
+      /content must be a non-empty string for overwrite mode/i,
+    );
+
+    await assert.rejects(
+      writeTool.execute({ path: 'notes/guarded.txt', content: '', mode: 'overwrite' }),
+      /content must be a non-empty string for overwrite mode/i,
+    );
+
+    assert.equal(await fs.readFile(filePath, 'utf8'), 'stable');
+  });
+});
+
 test('read tool returns full UTF-8 content for existing file when maxBytes is omitted', async () => {
   await withTempDir(async (rootDir) => {
     const readTool = createReadTool({ rootDir });
