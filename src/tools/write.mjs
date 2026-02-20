@@ -87,7 +87,7 @@ export class WriteTool {
   async execute(input = {}, context = {}) {
     const {
       path: targetPath,
-      content = '',
+      content,
       mode = 'overwrite',
     } = input;
     const { resolvedPath, resolvedRoot } = await resolveSafePath(this.#rootDirs, targetPath, {
@@ -98,6 +98,13 @@ export class WriteTool {
     const normalizedPath = targetPath.trim();
     if (normalizedPath === '.env' || normalizedPath.startsWith('.env.')) {
       throw new Error('Writing .env files is not allowed.');
+    }
+
+    if (
+      normalizedMode === 'overwrite'
+      && (typeof content !== 'string' || content.length === 0)
+    ) {
+      throw new TypeError('content must be a non-empty string for overwrite mode.');
     }
 
     if (typeof content !== 'string') {
