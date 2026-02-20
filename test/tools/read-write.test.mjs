@@ -88,6 +88,17 @@ test('read tool blocks ../ and absolute paths outside roots with path-escape err
   });
 });
 
+test('read tool fails with not-found error for missing file inside allowed root', async () => {
+  await withTempDir(async (rootDir) => {
+    const readTool = createReadTool({ rootDir });
+
+    await assert.rejects(
+      readTool.execute({ path: 'notes/missing.txt' }),
+      /not-found/i,
+    );
+  });
+});
+
 test('read/write tools reject root escape and .env writes', async () => {
   await withTempDir(async (rootDir) => {
     const writeTool = createWriteTool({ rootDir });
