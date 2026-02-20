@@ -95,7 +95,7 @@ export class ReadTool {
 
   constructor(options = {}) {
     this.#rootDirs = normalizeRootDirs(options);
-    this.#maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+    this.#maxBytes = options.maxBytes;
   }
 
   async execute(input = {}) {
@@ -105,8 +105,9 @@ export class ReadTool {
     });
 
     const fileBuffer = await fs.readFile(resolvedPath);
-    const truncated = fileBuffer.byteLength > maxBytes;
-    const usedBuffer = truncated ? fileBuffer.subarray(0, maxBytes) : fileBuffer;
+    const effectiveMaxBytes = Number.isFinite(maxBytes) ? maxBytes : Number.POSITIVE_INFINITY;
+    const truncated = fileBuffer.byteLength > effectiveMaxBytes;
+    const usedBuffer = truncated ? fileBuffer.subarray(0, effectiveMaxBytes) : fileBuffer;
 
     return {
       path: path.relative(resolvedRoot, resolvedPath) || path.basename(resolvedPath),
