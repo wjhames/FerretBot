@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 const DEFAULT_MAX_BYTES = 16 * 1024;
+const PATH_ESCAPE_ERROR = 'path-escape: Path escapes root directory.';
 
 function normalizeRootDirs(options = {}) {
   const roots = [];
@@ -52,7 +53,7 @@ async function resolveSafePath(rootDirOrDirs, targetPath, options = {}) {
     const absolutePath = path.resolve(normalizedPath);
     const matchedRoot = rootDirs.find((rootDir) => isUnderRoot(rootDir, absolutePath));
     if (!matchedRoot) {
-      throw new Error('Path escapes root directory.');
+      throw new Error(PATH_ESCAPE_ERROR);
     }
     return { resolvedPath: absolutePath, resolvedRoot: matchedRoot };
   }
@@ -83,7 +84,7 @@ async function resolveSafePath(rootDirOrDirs, targetPath, options = {}) {
     isUnderRoot(candidate.resolvedRoot, candidate.resolvedPath));
 
   if (!fallback) {
-    throw new Error('Path escapes root directory.');
+    throw new Error(PATH_ESCAPE_ERROR);
   }
 
   return fallback;
