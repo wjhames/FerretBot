@@ -1,20 +1,5 @@
 import { buildCorrectionPrompt } from './policy.mjs';
 
-function validateToolPolicy(parsedToolCall) {
-  if (!parsedToolCall || typeof parsedToolCall !== 'object') {
-    return null;
-  }
-
-  if (parsedToolCall.toolName === 'bash') {
-    const command = String(parsedToolCall.arguments?.command ?? '');
-    if (/\bls\s+-R\b/.test(command)) {
-      return 'Avoid recursive directory dumps (ls -R). Use targeted reads/listing.';
-    }
-  }
-
-  return null;
-}
-
 export async function executeToolCall(options = {}) {
   const {
     event,
@@ -50,12 +35,6 @@ export async function executeToolCall(options = {}) {
           arguments: parsedToolCall.arguments,
         })
       : { valid: true, errors: [] };
-  const policyViolation = validateToolPolicy(parsedToolCall);
-  if (policyViolation) {
-    const existing = Array.isArray(validation.errors) ? validation.errors : [];
-    validation.valid = false;
-    validation.errors = [...existing, policyViolation];
-  }
 
   if (!validation.valid) {
     const reason = validation.errors?.join(' ') || 'Invalid tool call.';

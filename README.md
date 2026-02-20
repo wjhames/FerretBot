@@ -122,7 +122,7 @@ Runtime data is still local-only and gitignored:
 - Write safety:
   Writes stay confined to configured workspace roots, and `.env` writes are blocked.
 - Command hygiene:
-  Recursive directory dumps like `ls -R` are rejected and retried with correction guidance.
+  Bash commands execute as requested, subject to timeout and buffer limits.
 - Context budgeting:
   Layer budget aliases (`systemPrompt`, `taskScope`, `skillContent`, `priorContext`) are normalized to runtime layer names.
 

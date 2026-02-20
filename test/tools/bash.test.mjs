@@ -53,14 +53,10 @@ test('BASH-04: command runs in configured cwd', async () => {
   }
 });
 
-test('BASH-05: blocked command returns explicit deterministic guardrail failure', async () => {
+test('BASH-05: recursive listing command is allowed', async () => {
   const tool = createBashTool();
   const result = await tool.execute({ command: 'ls -R .' });
 
-  assert.equal(result.success, false);
-  assert.equal(result.exitCode, null);
-  assert.equal(result.blocked, true);
-  assert.equal(result.errorCode, 'GUARDRAIL_BLOCKED_COMMAND');
-  assert.match(result.stderr, /blocked command/i);
-  assert.match(result.retryGuidance, /use a non-recursive listing/i);
+  assert.equal(result.success, true);
+  assert.equal(result.exitCode, 0);
 });

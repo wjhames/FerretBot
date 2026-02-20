@@ -157,9 +157,10 @@ test('executeToolCall forwards tool execution context into registry execute', as
   assert.deepEqual(capturedContext, { writeRollback: { id: 'rollback' } });
 });
 
-test('executeToolCall rejects recursive ls -R command with correction retry', async () => {
+test('executeToolCall allows recursive ls -R command when schema-valid', async () => {
   const messages = [];
   const emitted = [];
+  const executions = [];
 
   const result = await executeToolCall({
     event: { channel: 'tui', sessionId: 's1' },
@@ -179,7 +180,8 @@ test('executeToolCall rejects recursive ls -R command with correction retry', as
       validateCall() {
         return { valid: true, errors: [] };
       },
-      async execute() {
+      async execute(call) {
+        executions.push(call);
         return { ok: true };
       },
     },
@@ -189,13 +191,11 @@ test('executeToolCall rejects recursive ls -R command with correction retry', as
   });
 
   assert.equal(result.done, false);
-  assert.equal(result.correctionRetries, 1);
-  assert.equal(messages.length, 2);
-  assert.match(messages[1].content, /Avoid recursive directory dumps/);
+  assert.equal(result.correctionRetries, 0);
+  assert.equal(executions.length, 1);
 
-  const status = emitted.find((event) => event.type === 'agent:status');
+  const status = emitted.find((event) => event.type === 'agent:status' && event.content.phase === 'tool:complete');
   assert.ok(status);
-  assert.equal(status.content.phase, 'validate:retry');
 });
 
 test('executeToolCall allows overwrite calls without rewriteReason', async () => {
