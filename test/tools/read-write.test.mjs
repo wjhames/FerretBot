@@ -58,6 +58,19 @@ test('read tool returns full UTF-8 content for existing file when maxBytes is om
   });
 });
 
+test('read tool reports explicit truncation bytes when maxBytes is provided', async () => {
+  await withTempDir(async (rootDir) => {
+    const readTool = createReadTool({ rootDir });
+    const filePath = path.join(rootDir, 'notes', 'big.txt');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, 'abcdefghij', 'utf8');
+
+    const read = await readTool.execute({ path: 'notes/big.txt', maxBytes: 4 });
+    assert.equal(read.bytes, 4);
+    assert.equal(read.truncated, true);
+  });
+});
+
 test('read/write tools reject root escape and .env writes', async () => {
   await withTempDir(async (rootDir) => {
     const writeTool = createWriteTool({ rootDir });
