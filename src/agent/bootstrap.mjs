@@ -8,22 +8,6 @@ const DEFAULT_PROMPT_FILES = Object.freeze({
 });
 const MAX_INCLUDE_CHARS = 12_000;
 const MAX_BOOTSTRAP_CHARS = 28_000;
-const DEFAULT_MEMORY_TEMPLATE = [
-  '# MEMORY.md',
-  '',
-  '## Facts',
-  '-',
-  '',
-  '## Preferences',
-  '-',
-  '',
-  '## Open Threads',
-  '-',
-  '',
-  '## Recent Decisions',
-  '-',
-  '',
-].join('\n');
 
 function normalizeFileNames(input = {}) {
   const merged = { ...DEFAULT_PROMPT_FILES, ...input };
@@ -57,9 +41,6 @@ export class WorkspaceBootstrapManager {
   }
 
   async ensureInitialized() {
-    if (this.#workspaceManager && typeof this.#workspaceManager.ensureTextFile === 'function') {
-      await this.#workspaceManager.ensureTextFile('MEMORY.md', DEFAULT_MEMORY_TEMPLATE);
-    }
     this.#initialized = true;
   }
 
@@ -85,7 +66,6 @@ export class WorkspaceBootstrapManager {
         'Agent instruction/memory files are under the agent state directory (.ferretbot).',
         'AGENTS.md policy files are loaded into bootstrap context automatically.',
         'When updating agent memory or profile files, use the .ferretbot/ path prefix.',
-        'Use .ferretbot/MEMORY.md as the canonical long-term memory file.',
       ].join('\n'),
       layers: {
         bootstrap: this.#cache?.bootstrapText ?? '',
