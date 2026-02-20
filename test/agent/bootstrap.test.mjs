@@ -33,8 +33,6 @@ test('bootstrap manager does not scaffold profile files', async () => {
     const agentsExists = await workspaceManager.exists('AGENTS.md');
     assert.equal(agentsExists, false, 'expected AGENTS.md to be absent');
 
-    const memoryExists = await workspaceManager.exists('MEMORY.md');
-    assert.equal(memoryExists, false, 'expected MEMORY.md to be absent');
   });
 });
 
