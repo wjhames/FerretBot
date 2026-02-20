@@ -65,13 +65,9 @@ npm run cli -- workflow dry-run <workflow-id> [--version <semver>] [--arg key=va
 
 ## Repo Setup
 
-Before first real use, copy/rename the example files to canonical names and customize:
+Before first real use, copy/rename the example file to canonical name and customize:
 
 - `.ferretbot/AGENTS.example.md` -> `.ferretbot/AGENTS.md`
-- `.ferretbot/IDENTITY.example.md` -> `.ferretbot/IDENTITY.md`
-- `.ferretbot/USER.example.md` -> `.ferretbot/USER.md`
-- `.ferretbot/MEMORY.example.md` -> `.ferretbot/MEMORY.md`
-- `.ferretbot/SOUL.example.md` -> `.ferretbot/SOUL.md`
 
 Only `*.example.md` files are tracked for sharing.
 Runtime data is still local-only and gitignored:
