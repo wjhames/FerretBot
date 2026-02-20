@@ -44,6 +44,20 @@ test('write tool writes and appends files; read tool truncates by maxBytes', asy
   });
 });
 
+test('read tool returns full UTF-8 content for existing file when maxBytes is omitted', async () => {
+  await withTempDir(async (rootDir) => {
+    const readTool = createReadTool({ rootDir });
+    const content = `prefix-${'é🙂漢'.repeat(6000)}-suffix`;
+    const filePath = path.join(rootDir, 'notes', 'utf8.txt');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, content, 'utf8');
+
+    const read = await readTool.execute({ path: 'notes/utf8.txt' });
+    assert.equal(read.content, content);
+    assert.equal(read.truncated, false);
+  });
+});
+
 test('read/write tools reject root escape and .env writes', async () => {
   await withTempDir(async (rootDir) => {
     const writeTool = createWriteTool({ rootDir });
