@@ -89,7 +89,6 @@ export class WriteTool {
       path: targetPath,
       content = '',
       mode = 'overwrite',
-      rewriteReason = null,
     } = input;
     const { resolvedPath, resolvedRoot } = await resolveSafePath(this.#rootDirs, targetPath, {
       preferExisting: false,
@@ -104,8 +103,6 @@ export class WriteTool {
     if (typeof content !== 'string') {
       throw new TypeError('content must be a string.');
     }
-    const reasonProvided = typeof rewriteReason === 'string' && rewriteReason.trim().length > 0;
-
     let existedBefore = false;
     try {
       await fs.access(resolvedPath);
@@ -116,10 +113,6 @@ export class WriteTool {
 
     const extension = path.extname(resolvedPath).toLowerCase();
     const isCodeFile = CODE_FILE_EXTENSIONS.has(extension);
-    if (normalizedMode === 'overwrite' && existedBefore && isCodeFile && !reasonProvided) {
-      throw new Error('Overwriting existing code files requires rewriteReason.');
-    }
-
     const rollback = context?.writeRollback;
     if (rollback && typeof rollback.captureFile === 'function') {
       await rollback.captureFile(resolvedPath);
@@ -142,7 +135,6 @@ export class WriteTool {
       mode: normalizedMode,
       existedBefore,
       isCodeFile,
-      rewriteReasonProvided: reasonProvided,
     };
   }
 }
