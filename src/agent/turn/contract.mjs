@@ -48,10 +48,6 @@ export function deriveTaskContract(event) {
   const risk = intent === 'mutate' ? 'high' : 'low';
   const verifiers = ['non_empty'];
 
-  if (intent === 'mutate' && scope === 'local') {
-    verifiers.push('diff_sanity');
-  }
-
   if (scope === 'external') {
     verifiers.push('schema');
   }
@@ -66,26 +62,6 @@ export function deriveTaskContract(event) {
 
 function verifyNonEmpty(finalText) {
   return typeof finalText === 'string' && finalText.trim().length > 0;
-}
-
-function verifyDiffSanity(toolResultHistory) {
-  for (const entry of toolResultHistory) {
-    if (!entry || entry.name !== 'write') {
-      continue;
-    }
-
-    const result = entry.result ?? {};
-    if (
-      result.mode === 'overwrite'
-      && result.existedBefore === true
-      && result.isCodeFile === true
-      && result.rewriteReasonProvided !== true
-    ) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 function verifySchema(finalText) {
@@ -111,17 +87,6 @@ export function verifyFinalResponse({
       };
     }
 
-    if (check === 'diff_sanity' && !verifyDiffSanity(toolResultHistory)) {
-      return {
-        ok: false,
-        failure: {
-          reason: 'unsafe_overwrite_without_reason',
-          retryable: true,
-          nextAction: 'retry_with_patch_or_rewrite_reason',
-        },
-      };
-    }
-
     if (check === 'schema' && !verifySchema(finalText)) {
       return {
         ok: false,
@@ -143,14 +108,6 @@ export function buildFinalRetryPrompt(failureReason) {
       'Your previous final response was empty.',
       'Respond with a non-empty final answer.',
       'Do not return tool JSON unless you must call a tool.',
-    ].join('\n');
-  }
-
-  if (failureReason === 'unsafe_overwrite_without_reason') {
-    return [
-      'Your previous response implied an unsafe file rewrite.',
-      'Use minimal targeted edits.',
-      'If rewrite is required, explicitly provide rewriteReason in write arguments.',
     ].join('\n');
   }
 
