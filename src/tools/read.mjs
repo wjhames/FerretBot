@@ -3,6 +3,7 @@ import path from 'node:path';
 
 const DEFAULT_MAX_BYTES = 16 * 1024;
 const PATH_ESCAPE_ERROR = 'path-escape: Path escapes root directory.';
+const NOT_FOUND_ERROR = 'not-found: File not found.';
 
 function normalizeRootDirs(options = {}) {
   const roots = [];
@@ -105,7 +106,15 @@ export class ReadTool {
       preferExisting: true,
     });
 
-    const fileBuffer = await fs.readFile(resolvedPath);
+    let fileBuffer;
+    try {
+      fileBuffer = await fs.readFile(resolvedPath);
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        throw new Error(`${NOT_FOUND_ERROR} ${resolvedPath}`);
+      }
+      throw error;
+    }
     const effectiveMaxBytes = Number.isFinite(maxBytes) ? maxBytes : Number.POSITIVE_INFINITY;
     const truncated = fileBuffer.byteLength > effectiveMaxBytes;
     const usedBuffer = truncated ? fileBuffer.subarray(0, effectiveMaxBytes) : fileBuffer;
