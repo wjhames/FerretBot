@@ -71,6 +71,23 @@ test('read tool reports explicit truncation bytes when maxBytes is provided', as
   });
 });
 
+test('read tool blocks ../ and absolute paths outside roots with path-escape error', async () => {
+  await withTempDir(async (rootDir) => {
+    const readTool = createReadTool({ rootDir });
+    const outsidePath = path.join(path.dirname(rootDir), 'outside.txt');
+
+    await assert.rejects(
+      readTool.execute({ path: '../outside.txt' }),
+      /path-escape/i,
+    );
+
+    await assert.rejects(
+      readTool.execute({ path: outsidePath }),
+      /path-escape/i,
+    );
+  });
+});
+
 test('read/write tools reject root escape and .env writes', async () => {
   await withTempDir(async (rootDir) => {
     const writeTool = createWriteTool({ rootDir });
