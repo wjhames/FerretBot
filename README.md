@@ -120,7 +120,7 @@ Runtime data is still local-only and gitignored:
 - Parse error hints:
   Parser errors include a compact candidate snippet for debugging without excessive context growth.
 - Write safety:
-  Overwriting existing code files requires explicit `rewriteReason`.
+  Writes stay confined to configured workspace roots, and `.env` writes are blocked.
 - Command hygiene:
   Recursive directory dumps like `ls -R` are rejected and retried with correction guidance.
 - Context budgeting:

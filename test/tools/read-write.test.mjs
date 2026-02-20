@@ -190,23 +190,17 @@ test('write tool calls rollback capture hook before writes', async () => {
   });
 });
 
-test('write tool rejects overwrite of existing code file without rewriteReason', async () => {
+test('write tool allows overwrite of existing code files', async () => {
   await withTempDir(async (rootDir) => {
     const writeTool = createWriteTool({ rootDir });
     const targetPath = path.join(rootDir, 'src', 'app.mjs');
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
     await fs.writeFile(targetPath, 'export const a = 1;\n', 'utf8');
 
-    await assert.rejects(
-      writeTool.execute({ path: 'src/app.mjs', content: 'export const a = 2;\n', mode: 'overwrite' }),
-      /requires rewriteReason/,
-    );
-
     await writeTool.execute({
       path: 'src/app.mjs',
       content: 'export const a = 2;\n',
       mode: 'overwrite',
-      rewriteReason: 'intentional full-file rewrite',
     });
 
     const readTool = createReadTool({ rootDir });
